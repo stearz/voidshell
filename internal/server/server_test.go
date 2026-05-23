@@ -112,8 +112,8 @@ func connectSSH(t *testing.T, addr string, hostPub ssh.PublicKey, sshUser string
 	}
 
 	cfg := &ssh.ClientConfig{
-		User: sshUser,
-		Auth: []ssh.AuthMethod{ssh.PublicKeys(clientSigner)},
+		User:            sshUser,
+		Auth:            []ssh.AuthMethod{ssh.PublicKeys(clientSigner)},
 		HostKeyCallback: ssh.FixedHostKey(hostPub),
 	}
 	client, err := ssh.Dial("tcp", addr, cfg)
@@ -138,8 +138,8 @@ func TestAuthFailureNoPodCreated(t *testing.T) {
 	_, clientPriv, _ := ed25519.GenerateKey(rand.Reader)
 	clientSigner, _ := ssh.NewSignerFromKey(clientPriv)
 	cfg := &ssh.ClientConfig{
-		User: "testuser",
-		Auth: []ssh.AuthMethod{ssh.PublicKeys(clientSigner)},
+		User:            "testuser",
+		Auth:            []ssh.AuthMethod{ssh.PublicKeys(clientSigner)},
 		HostKeyCallback: ssh.FixedHostKey(hostPub),
 	}
 	_, err := ssh.Dial("tcp", addr, cfg)
@@ -236,8 +236,8 @@ func TestWorkspaceIdentityFromAuth(t *testing.T) {
 
 	session, _ := client.NewSession()
 	session.RequestPty("xterm", 24, 80, ssh.TerminalModes{}) //nolint:errcheck
-	session.Shell()                                           //nolint:errcheck
-	session.Wait()                                            //nolint:errcheck
+	session.Shell()                                          //nolint:errcheck
+	session.Wait()                                           //nolint:errcheck
 
 	lifecycle.mu.Lock()
 	defer lifecycle.mu.Unlock()

@@ -33,8 +33,8 @@ func TestObjectNames(t *testing.T) {
 
 func TestIsolation(t *testing.T) {
 	cases := []struct {
-		name    string
-		a, b    Identity
+		name string
+		a, b Identity
 	}{
 		{
 			"different github users, same ssh user",
@@ -69,11 +69,11 @@ func TestIsolation(t *testing.T) {
 
 func TestNormalization(t *testing.T) {
 	cases := []struct {
-		name     string
-		github   string
-		ssh      string
-		wantGH   string // expected normalized github segment inside workspace ID
-		wantSSH  string // expected normalized ssh segment inside workspace ID
+		name    string
+		github  string
+		ssh     string
+		wantGH  string // expected normalized github segment inside workspace ID
+		wantSSH string // expected normalized ssh segment inside workspace ID
 	}{
 		{"lowercase", "ALICE", "DEV", "alice", "dev"},
 		{"dots replaced", "alice.smith", "my.project", "alice-smith", "my-project"},

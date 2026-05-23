@@ -242,9 +242,9 @@ func TestIsolation(t *testing.T) {
 	ctx := context.Background()
 
 	identities := []workspace.Identity{
-		workspace.New("stearz", "someuser"),  // different github, same ssh
-		workspace.New("alice", "someuser"),   // different github, same ssh
-		workspace.New("alice", "other"),      // same github, different ssh
+		workspace.New("stearz", "someuser"), // different github, same ssh
+		workspace.New("alice", "someuser"),  // different github, same ssh
+		workspace.New("alice", "other"),     // same github, different ssh
 	}
 
 	for _, id := range identities {
