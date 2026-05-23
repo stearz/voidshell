@@ -32,6 +32,10 @@ type AuthConfig struct {
 	// AllowedGitHubUsers is the list of GitHub usernames that may connect.
 	// An empty list denies everyone.
 	AllowedGitHubUsers []string `yaml:"allowedGitHubUsers"`
+	// KeyCacheTTL is how long fetched GitHub key lists are cached before being
+	// re-fetched. Removed keys stop working within one TTL. Accepts any
+	// duration string valid for time.ParseDuration (e.g. "5m", "1h").
+	KeyCacheTTL string `yaml:"keyCacheTTL"`
 }
 
 // KubernetesConfig configures workspace provisioning.
@@ -77,6 +81,9 @@ func defaults() Config {
 		SSH: SSHConfig{
 			Port: 2222,
 		},
+		Auth: AuthConfig{
+			KeyCacheTTL: "5m",
+		},
 		Kubernetes: KubernetesConfig{
 			GuestNamespace: "voidshell-workspaces",
 			StorageClass:   "standard",
@@ -106,6 +113,9 @@ func applyEnv(c *Config) {
 	}
 	if v := os.Getenv("VOIDSHELL_AUTH_ALLOWED_USERS"); v != "" {
 		c.Auth.AllowedGitHubUsers = splitTrimmed(v, ",")
+	}
+	if v := os.Getenv("VOIDSHELL_AUTH_KEY_CACHE_TTL"); v != "" {
+		c.Auth.KeyCacheTTL = v
 	}
 	if v := os.Getenv("VOIDSHELL_K8S_GUEST_NAMESPACE"); v != "" {
 		c.Kubernetes.GuestNamespace = v

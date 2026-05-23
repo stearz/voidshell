@@ -17,6 +17,9 @@ auth:
   allowedGitHubUsers:
     - alice
     - bob
+  # How long fetched GitHub public-key lists are cached. Removed keys stop
+  # working within one TTL. Accepts any Go duration string (e.g. "5m", "1h").
+  keyCacheTTL: 5m
 
 kubernetes:
   # Namespace where workspace Pods and PVCs are created.

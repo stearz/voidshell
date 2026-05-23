@@ -14,6 +14,9 @@ func TestLoadDefaults(t *testing.T) {
 	if cfg.SSH.Port != 2222 {
 		t.Errorf("default SSH port: got %d, want 2222", cfg.SSH.Port)
 	}
+	if cfg.Auth.KeyCacheTTL != "5m" {
+		t.Errorf("default key cache TTL: got %q, want \"5m\"", cfg.Auth.KeyCacheTTL)
+	}
 	if cfg.Kubernetes.GuestNamespace != "voidshell-workspaces" {
 		t.Errorf("default guest namespace: got %q, want %q", cfg.Kubernetes.GuestNamespace, "voidshell-workspaces")
 	}
@@ -87,6 +90,7 @@ func TestLoadEnvOverrides(t *testing.T) {
 	t.Setenv("VOIDSHELL_SSH_PORT", "2300")
 	t.Setenv("VOIDSHELL_K8S_GUEST_NAMESPACE", "env-ns")
 	t.Setenv("VOIDSHELL_AUTH_ALLOWED_USERS", "carol, dave")
+	t.Setenv("VOIDSHELL_AUTH_KEY_CACHE_TTL", "10m")
 	t.Setenv("VOIDSHELL_WORKSPACE_SHELL_IMAGE", "alpine:3.19")
 	t.Setenv("VOIDSHELL_WORKSPACE_SHELL_COMMAND", "/bin/sh,-l")
 
@@ -102,6 +106,9 @@ func TestLoadEnvOverrides(t *testing.T) {
 	}
 	if len(cfg.Auth.AllowedGitHubUsers) != 2 || cfg.Auth.AllowedGitHubUsers[1] != "dave" {
 		t.Errorf("allowed users from env: got %v", cfg.Auth.AllowedGitHubUsers)
+	}
+	if cfg.Auth.KeyCacheTTL != "10m" {
+		t.Errorf("key cache TTL from env: got %q, want \"10m\"", cfg.Auth.KeyCacheTTL)
 	}
 	if cfg.Workspace.ShellImage != "alpine:3.19" {
 		t.Errorf("shell image from env: got %q", cfg.Workspace.ShellImage)

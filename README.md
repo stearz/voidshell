@@ -65,6 +65,7 @@ Kubernetes Secrets without rewriting the whole config file.
 | `VOIDSHELL_SSH_HOST_KEY_PATH`     | `ssh.hostKeyPath`                   | `""`                     |
 | `VOIDSHELL_SSH_HOST_KEY_SECRET`   | `ssh.hostKeySecret`                 | `""`                     |
 | `VOIDSHELL_AUTH_ALLOWED_USERS`    | `auth.allowedGitHubUsers` (CSV)     | `[]`                     |
+| `VOIDSHELL_AUTH_KEY_CACHE_TTL`    | `auth.keyCacheTTL`                  | `5m`                     |
 | `VOIDSHELL_K8S_GUEST_NAMESPACE`   | `kubernetes.guestNamespace`         | `voidshell-workspaces`   |
 | `VOIDSHELL_K8S_STORAGE_CLASS`     | `kubernetes.storageClass`           | `standard`               |
 | `VOIDSHELL_K8S_STORAGE_SIZE`      | `kubernetes.storageSize`            | `5Gi`                    |
