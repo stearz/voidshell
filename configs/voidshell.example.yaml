@@ -1,0 +1,34 @@
+# voidshell example configuration
+# Copy to voidshell.yaml and adjust for your environment.
+# Every field can also be set via a VOIDSHELL_* environment variable
+# (see README.md for the full mapping).
+
+ssh:
+  # TCP port the SSH server listens on.
+  port: 2222
+  # Path to a PEM-encoded SSH host key file (mutually exclusive with hostKeySecret).
+  hostKeyPath: ""
+  # Name of a Kubernetes Secret that holds the host key (mutually exclusive with hostKeyPath).
+  hostKeySecret: ""
+
+auth:
+  # GitHub usernames allowed to open a workspace.
+  # An empty list denies everyone.
+  allowedGitHubUsers:
+    - alice
+    - bob
+
+kubernetes:
+  # Namespace where workspace Pods and PVCs are created.
+  guestNamespace: voidshell-workspaces
+  # StorageClass used for workspace PVCs.
+  storageClass: standard
+  # PVC size requested for each workspace.
+  storageSize: 5Gi
+
+workspace:
+  # OCI image used for the workspace Pod.
+  shellImage: ubuntu:22.04
+  # Entrypoint executed inside the workspace Pod.
+  shellCommand:
+    - /bin/bash
