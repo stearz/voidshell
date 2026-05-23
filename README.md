@@ -15,8 +15,7 @@ for the full identity model and Kubernetes object naming rules.
 
 ## Status
 
-Scaffold / early development. SSH auth and Kubernetes provisioning are not yet
-implemented.
+Phase 1 complete: SSH auth with GitHub public key validation, Kubernetes workspace lifecycle (PVC + pod), interactive shell sessions with PTY support, and a Helm chart for GitOps deployments.
 
 ## Prerequisites
 
@@ -79,6 +78,33 @@ cmd/voidshell/       main entrypoint
 internal/config/     configuration loading and types
 configs/             example config file
 docs/adr/            architecture decision records
+```
+
+## Releasing
+
+Releases are managed by [release-please](https://github.com/googleapis/release-please). Merging conventional commits to `main` accumulates release notes; when a release PR created by the bot is merged, it:
+
+1. Creates a GitHub Release and semver tag (e.g. `v0.2.0`).
+2. Triggers the release workflow which publishes:
+   - A multi-arch container image to `ghcr.io/stearz/voidshell:<tag>`
+   - A Helm chart OCI artifact to `oci://ghcr.io/stearz/charts/voidshell`
+
+### Commit convention
+
+| Prefix | Effect |
+|---|---|
+| `feat:` | Bumps minor version |
+| `fix:` | Bumps patch version |
+| `feat!:` / `fix!:` / `BREAKING CHANGE:` | Bumps major version |
+| `chore:`, `docs:`, `test:`, `ci:` | No release triggered |
+
+### Install released chart
+
+```
+helm install voidshell oci://ghcr.io/stearz/charts/voidshell \
+  --version 0.1.0 \
+  -n voidshell --create-namespace \
+  -f values-homelab.yaml
 ```
 
 ## Author(s)

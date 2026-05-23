@@ -1,0 +1,22 @@
+name: Release Please
+
+# Creates a release PR from accumulated conventional commits on main.
+# When the PR is merged, release-please creates a GitHub Release and tag.
+on:
+  push:
+    branches: [main]
+
+# Needs write access to create/update the release PR and tag.
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  release-please:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: googleapis/release-please-action@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
