@@ -49,7 +49,7 @@ kubernetes:
 
 # Workspace container settings.
 workspace:
-  shellImage: "ubuntu:22.04"
+  shellImage: "ubuntu:26.04"
   shellCommand:
     - /bin/bash
 
