@@ -21,7 +21,7 @@ jobs:
     name: Publish container image
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       # QEMU required for linux/arm64 cross-build on the amd64 runner.
       - uses: docker/setup-qemu-action@v3
@@ -61,7 +61,7 @@ jobs:
     name: Publish Helm chart to GHCR OCI
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - uses: azure/setup-helm@v4
         with:
