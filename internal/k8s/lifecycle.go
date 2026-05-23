@@ -54,14 +54,20 @@ type Config struct {
 
 // Manager manages the Kubernetes lifecycle of workspace PVCs and shell pods.
 type Manager struct {
-	client kubernetes.Interface
-	cfg    Config
+	client  kubernetes.Interface
+	cfg     Config
+	restCfg *rest.Config // nil when created via New (test mode)
 }
 
 // New creates a Manager with the given client and config. Use this in tests
 // with a fake client; use NewFromKubeconfig in production.
 func New(client kubernetes.Interface, cfg Config) *Manager {
 	return &Manager{client: client, cfg: cfg}
+}
+
+// Client returns the underlying Kubernetes client interface.
+func (m *Manager) Client() kubernetes.Interface {
+	return m.client
 }
 
 // NewFromKubeconfig creates a Manager using in-cluster config, falling back to
@@ -84,7 +90,7 @@ func NewFromKubeconfig(kubeconfigPath string, cfg Config) (*Manager, error) {
 	if err != nil {
 		return nil, fmt.Errorf("building Kubernetes client: %w", err)
 	}
-	return New(client, cfg), nil
+	return &Manager{client: client, cfg: cfg, restCfg: restCfg}, nil
 }
 
 // EnsureWorkspace creates or reuses the PVC and pod for the given workspace
