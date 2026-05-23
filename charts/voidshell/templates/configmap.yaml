@@ -1,0 +1,27 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "voidshell.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "voidshell.labels" . | nindent 4 }}
+data:
+  config.yaml: |
+    ssh:
+      port: {{ .Values.ssh.port }}
+    auth:
+      allowedGitHubUsers:
+        {{- range .Values.auth.allowedGitHubUsers }}
+        - {{ . | quote }}
+        {{- end }}
+      keyCacheTTL: {{ .Values.auth.keyCacheTTL | quote }}
+    kubernetes:
+      guestNamespace: {{ .Values.kubernetes.guestNamespace | quote }}
+      storageClass: {{ .Values.kubernetes.storageClass | quote }}
+      storageSize: {{ .Values.kubernetes.storageSize | quote }}
+    workspace:
+      shellImage: {{ .Values.workspace.shellImage | quote }}
+      shellCommand:
+        {{- range .Values.workspace.shellCommand }}
+        - {{ . | quote }}
+        {{- end }}

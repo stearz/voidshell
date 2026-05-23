@@ -1,0 +1,17 @@
+# RoleBinding in the guest namespace binds the voidshell ServiceAccount
+# (which lives in .Release.Namespace) to the guest-namespace Role.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ include "voidshell.fullname" . }}
+  namespace: {{ .Values.kubernetes.guestNamespace }}
+  labels:
+    {{- include "voidshell.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ include "voidshell.fullname" . }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "voidshell.serviceAccountName" . }}
+    namespace: {{ .Release.Namespace }}

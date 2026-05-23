@@ -3,8 +3,9 @@
 // Required RBAC for the voidshell ServiceAccount (scoped to the guest namespace):
 //
 //	pods:                    get, list, create, delete
-//	persistentvolumeclaims:  get, create
 //	pods/log:                get
+//	pods/attach:             create
+//	persistentvolumeclaims:  get, create
 //
 // The guest namespace must pre-exist; voidshell does not create it.
 package k8s

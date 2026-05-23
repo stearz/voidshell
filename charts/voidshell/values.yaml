@@ -1,0 +1,80 @@
+# Default values for voidshell.
+# See README.md for a minimal homelab example.
+
+replicaCount: 1
+
+image:
+  repository: ghcr.io/stearz/voidshell
+  pullPolicy: IfNotPresent
+  # Defaults to the chart appVersion when empty.
+  tag: ""
+
+serviceAccount:
+  # Create a dedicated ServiceAccount for voidshell.
+  create: true
+  # Override the generated name.
+  name: ""
+  annotations: {}
+
+# SSH server settings.
+ssh:
+  # TCP port the SSH server listens on inside the pod.
+  port: 2222
+  # Name of the Kubernetes Secret (in .Release.Namespace) that contains the
+  # SSH host private key under one of: ssh_host_ed25519_key, ssh_host_rsa_key,
+  # hostkey, or key.
+  # Create it once with:
+  #   ssh-keygen -t ed25519 -f /tmp/voidshell_host_key -N ""
+  #   kubectl create secret generic voidshell-host-key \
+  #     --from-file=ssh_host_ed25519_key=/tmp/voidshell_host_key
+  hostKeySecret: "voidshell-host-key"
+
+# Authentication settings.
+auth:
+  # GitHub usernames allowed to open a workspace. An empty list denies everyone.
+  allowedGitHubUsers: []
+  # How long fetched GitHub key lists are cached. Removed keys stop working
+  # within one TTL. Accepts any value valid for Go's time.ParseDuration.
+  keyCacheTTL: "5m"
+
+# Kubernetes workspace provisioning settings.
+kubernetes:
+  # Pre-existing namespace where workspace pods and PVCs are created.
+  # Must exist before deploying voidshell.
+  guestNamespace: "voidshell-guest"
+  # PVC storage class for workspace volumes (e.g. "longhorn").
+  storageClass: "longhorn"
+  # Requested PVC capacity per workspace.
+  storageSize: "5Gi"
+
+# Workspace container settings.
+workspace:
+  shellImage: "ubuntu:22.04"
+  shellCommand:
+    - /bin/bash
+
+# Kubernetes Service for the SSH listener.
+service:
+  type: ClusterIP
+  port: 2222
+
+# Resource requests and limits for the voidshell proxy pod.
+resources:
+  requests:
+    cpu: 50m
+    memory: 64Mi
+  limits:
+    cpu: 200m
+    memory: 128Mi
+
+# Node scheduling — useful for targeting arm64 Raspberry Pi nodes.
+nodeSelector: {}
+tolerations: []
+affinity: {}
+
+# Optional NetworkPolicy restricting ingress to the voidshell pod.
+networkPolicy:
+  enabled: false
+  # CIDR blocks or pod/namespace selectors allowed to reach the SSH port.
+  # When empty any source is permitted (useful for a homelab LoadBalancer).
+  ingressCIDRs: []

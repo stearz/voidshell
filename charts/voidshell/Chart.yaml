@@ -1,0 +1,15 @@
+apiVersion: v2
+name: voidshell
+description: SSH-to-Kubernetes workspace proxy with GitHub public key authentication
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+keywords:
+  - ssh
+  - kubernetes
+  - workspace
+home: https://github.com/stearz/voidshell
+sources:
+  - https://github.com/stearz/voidshell
+maintainers:
+  - name: stearz

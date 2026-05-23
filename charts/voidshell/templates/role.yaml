@@ -1,0 +1,22 @@
+# Role in the guest namespace grants voidshell the minimum permissions it needs
+# to manage workspace pods and PVCs. Scoped to guestNamespace, not cluster-wide.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ include "voidshell.fullname" . }}
+  namespace: {{ .Values.kubernetes.guestNamespace }}
+  labels:
+    {{- include "voidshell.labels" . | nindent 4 }}
+rules:
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list", "create", "delete"]
+  - apiGroups: [""]
+    resources: ["pods/log"]
+    verbs: ["get"]
+  - apiGroups: [""]
+    resources: ["pods/attach"]
+    verbs: ["create"]
+  - apiGroups: [""]
+    resources: ["persistentvolumeclaims"]
+    verbs: ["get", "create"]

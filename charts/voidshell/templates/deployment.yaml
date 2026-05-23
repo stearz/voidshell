@@ -1,0 +1,80 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "voidshell.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "voidshell.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "voidshell.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "voidshell.selectorLabels" . | nindent 8 }}
+    spec:
+      serviceAccountName: {{ include "voidshell.serviceAccountName" . }}
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65534
+        runAsGroup: 65534
+      containers:
+        - name: voidshell
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - name: ssh
+              containerPort: {{ .Values.ssh.port }}
+              protocol: TCP
+          env:
+            - name: VOIDSHELL_CONFIG
+              value: /etc/voidshell/config.yaml
+            # Mount the host key as a file — no API secret-read permission needed.
+            - name: VOIDSHELL_SSH_HOST_KEY_PATH
+              value: /etc/voidshell/hostkey/ssh_host_ed25519_key
+          volumeMounts:
+            - name: config
+              mountPath: /etc/voidshell/config.yaml
+              subPath: config.yaml
+              readOnly: true
+            - name: host-key
+              mountPath: /etc/voidshell/hostkey
+              readOnly: true
+          readinessProbe:
+            tcpSocket:
+              port: ssh
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            tcpSocket:
+              port: ssh
+            initialDelaySeconds: 10
+            periodSeconds: 30
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+      volumes:
+        - name: config
+          configMap:
+            name: {{ include "voidshell.fullname" . }}
+        - name: host-key
+          secret:
+            secretName: {{ .Values.ssh.hostKeySecret }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
