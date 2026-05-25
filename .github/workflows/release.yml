@@ -77,9 +77,8 @@ jobs:
 
       - name: Stamp chart version and appVersion
         run: |
-          VERSION=${{ steps.ver.outputs.semver }}
-          yq -i ".version = \"${VERSION}\"" charts/voidshell/Chart.yaml
-          yq -i ".appVersion = \"${VERSION}\"" charts/voidshell/Chart.yaml
+          yq -i ".version = \"${{ steps.ver.outputs.semver }}\"" charts/voidshell/Chart.yaml
+          yq -i ".appVersion = \"${{ steps.ver.outputs.tag }}\"" charts/voidshell/Chart.yaml
 
       - name: Package chart
         run: helm package charts/voidshell
