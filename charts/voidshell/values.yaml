@@ -9,6 +9,11 @@ image:
   # Defaults to the chart appVersion when empty.
   tag: ""
 
+# List of pull secret names for private registries, e.g.:
+# imagePullSecrets:
+#   - name: ghcr-pull-secret
+imagePullSecrets: []
+
 serviceAccount:
   # Create a dedicated ServiceAccount for voidshell.
   create: true

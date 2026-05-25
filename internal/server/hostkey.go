@@ -44,7 +44,7 @@ func loadHostKeyFromSecret(ctx context.Context, client kubernetes.Interface, nam
 		return nil, fmt.Errorf("getting host key secret %q: %w", secretName, err)
 	}
 	// Try well-known key names in order of preference.
-	for _, k := range []string{"ssh_host_ed25519_key", "ssh_host_rsa_key", "hostkey", "key"} {
+	for _, k := range []string{"ssh_host_ed25519_key", "ssh_host_rsa_key", "host-key", "hostkey", "key"} {
 		if data, ok := secret.Data[k]; ok {
 			signer, err := ssh.ParsePrivateKey(data)
 			if err != nil {
@@ -53,5 +53,5 @@ func loadHostKeyFromSecret(ctx context.Context, client kubernetes.Interface, nam
 			return signer, nil
 		}
 	}
-	return nil, fmt.Errorf("host key secret %q has no recognized key field (tried: ssh_host_ed25519_key, ssh_host_rsa_key, hostkey, key)", secretName)
+	return nil, fmt.Errorf("host key secret %q has no recognized key field (tried: ssh_host_ed25519_key, ssh_host_rsa_key, host-key, hostkey, key)", secretName)
 }

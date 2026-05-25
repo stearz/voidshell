@@ -16,6 +16,10 @@ spec:
         {{- include "voidshell.selectorLabels" . | nindent 8 }}
     spec:
       serviceAccountName: {{ include "voidshell.serviceAccountName" . }}
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       securityContext:
         runAsNonRoot: true
         runAsUser: 65534
@@ -33,7 +37,7 @@ spec:
               value: /etc/voidshell/config.yaml
             # Mount the host key as a file — no API secret-read permission needed.
             - name: VOIDSHELL_SSH_HOST_KEY_PATH
-              value: /etc/voidshell/hostkey/ssh_host_ed25519_key
+              value: /etc/voidshell/hostkey/host-key
           volumeMounts:
             - name: config
               mountPath: /etc/voidshell/config.yaml
