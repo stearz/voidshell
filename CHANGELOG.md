@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.3.0](https://github.com/stearz/voidshell/compare/v0.2.0...v0.3.0) (2026-05-25)
+
+
+### Features
+
+* **deployment:** add support for image pull secrets and update host key reference ([a82bc20](https://github.com/stearz/voidshell/commit/a82bc202195f91fb5bc6dcb230d54fc8adc33ac1))
+
+
+### Bug Fixes
+
+* **ci:** align image tag with appVersion and unblock release workflow trigger ([f763666](https://github.com/stearz/voidshell/commit/f763666226bd69d6db8b49c41008cb88e93e5119))
+
 ## [0.2.0](https://github.com/stearz/voidshell/compare/v0.1.0...v0.2.0) (2026-05-23)
 
 
