@@ -10,8 +10,10 @@ GitHub-user allow-list, and provisions an ephemeral Kubernetes workspace pod for
 them. The workspace identity is the tuple `(github_username, ssh_username)`,
 which allows one GitHub account to maintain multiple independent workspaces.
 
-See [docs/adr/001-identity-and-naming.md](docs/adr/001-identity-and-naming.md)
-for the full identity model and Kubernetes object naming rules.
+Inside the workspace pod you run as the SSH username you connected with — not as
+`root` or a generic user. See [Workspace image](#workspace-image) below and
+[docs/adr/001-identity-and-naming.md](docs/adr/001-identity-and-naming.md) for
+the full identity model and Kubernetes object naming rules.
 
 ## Status
 
@@ -68,8 +70,65 @@ Kubernetes Secrets without rewriting the whole config file.
 | `VOIDSHELL_K8S_GUEST_NAMESPACE`   | `kubernetes.guestNamespace`         | `voidshell-workspaces`   |
 | `VOIDSHELL_K8S_STORAGE_CLASS`     | `kubernetes.storageClass`           | `standard`               |
 | `VOIDSHELL_K8S_STORAGE_SIZE`      | `kubernetes.storageSize`            | `5Gi`                    |
-| `VOIDSHELL_WORKSPACE_SHELL_IMAGE` | `workspace.shellImage`              | `ubuntu:22.04`           |
+| `VOIDSHELL_WORKSPACE_SHELL_IMAGE` | `workspace.shellImage`              | `ubuntu:26.04`           |
 | `VOIDSHELL_WORKSPACE_SHELL_COMMAND`| `workspace.shellCommand` (CSV)     | `/bin/bash`              |
+
+## Workspace image
+
+voidshell ships a purpose-built workspace image (`Dockerfile.workspace`) that
+provides:
+
+- **Homebrew** pre-installed at `/home/linuxbrew/.linuxbrew`, writable by
+  workspace users via the `brew` group.
+- **Non-root execution** — the container starts directly as the pre-baked
+  `voidshell` user (UID 1000); it never runs as root. voidshell injects the
+  SSH username as `VOIDSHELL_USER`, `USER`, and `LOGNAME` env vars, and a
+  `/etc/profile.d` script sets the shell prompt to the SSH username so you
+  see `devbox@hostname` instead of `voidshell@hostname`.
+
+### How user identity flows into the container
+
+```
+ssh devbox@voidshell.homelab
+     │
+     ▼
+voidshell authenticates via GitHub keys
+  → github_user = stearz   (who you are)
+  → ssh_user    = devbox   (what you typed before @)
+     │
+     ▼
+Pod created with:
+  env VOIDSHELL_USER=devbox  USER=devbox  LOGNAME=devbox
+  securityContext: runAsUser=1000, runAsNonRoot=true
+     │
+     ▼
+Container starts as pre-baked user "voidshell" (UID 1000) — never root
+/etc/profile.d/voidshell-prompt.sh sets PS1 using $VOIDSHELL_USER
+     │
+     ▼
+Prompt shows:  devbox@hostname:~$
+whoami returns: voidshell  (UID 1000 in /etc/passwd)
+$USER returns:  devbox
+```
+
+### Building and using the workspace image
+
+```sh
+docker build -f Dockerfile.workspace -t ghcr.io/stearz/voidshell-workspace:latest .
+docker push ghcr.io/stearz/voidshell-workspace:latest
+```
+
+In your voidshell config, point `shellImage` at the built image and leave
+`shellCommand` unset (or omit it) so the image's `ENTRYPOINT` runs:
+
+```yaml
+workspace:
+  shellImage: ghcr.io/stearz/voidshell-workspace:latest
+  # shellCommand: omit to use the image CMD (recommended)
+```
+
+A plain base image (`ubuntu:26.04`) still works if you set `shellCommand: [/bin/bash]` —
+you will just land as `root` without Homebrew.
 
 ## Project layout
 

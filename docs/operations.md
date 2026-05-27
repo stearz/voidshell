@@ -60,6 +60,46 @@ The full workspace ID is always ≤ 63 characters (RFC 1123 DNS label compliant)
 
 ---
 
+## Workspace image
+
+voidshell ships a purpose-built workspace image (`Dockerfile.workspace`) that
+is strongly recommended over a plain base image. It provides:
+
+- **Homebrew** pre-installed and writable by the session user.
+- **Non-root execution** — the container starts as the pre-baked `voidshell`
+  user (UID 1000) with `runAsNonRoot: true`; the shell prompt shows the SSH
+  username via injected env vars.
+
+### How user identity works
+
+The workspace image pre-bakes a `voidshell` user at UID 1000 (member of the
+`brew` group). At pod creation time voidshell sets `securityContext.runAsUser:
+1000` and `runAsNonRoot: true` so the container starts directly as that user —
+it never runs as root.
+
+Three env vars are injected into the pod at creation time:
+
+| Variable | Value | Purpose |
+|---|---|---|
+| `VOIDSHELL_USER` | `<ssh_username>` | Used by the profile.d script |
+| `USER` | `<ssh_username>` | Shell and tool conventions |
+| `LOGNAME` | `<ssh_username>` | POSIX login name |
+
+`/etc/profile.d/voidshell-prompt.sh` sets `PS1` to `${VOIDSHELL_USER}@\h:\w\$`
+so the prompt displays the SSH username. `whoami` returns `voidshell` because it
+looks up UID 1000 in `/etc/passwd`; `$USER` and `$LOGNAME` return the SSH
+username.
+
+### Building the workspace image
+
+```bash
+docker build -f Dockerfile.workspace \
+  -t ghcr.io/stearz/voidshell-workspace:latest .
+docker push ghcr.io/stearz/voidshell-workspace:latest
+```
+
+---
+
 ## Helm values — minimal homelab example
 
 ```yaml
@@ -75,8 +115,8 @@ kubernetes:
   storageSize: 5Gi
 
 workspace:
-  shellImage: ubuntu:22.04
-  shellCommand: [/bin/bash]
+  shellImage: ghcr.io/stearz/voidshell-workspace:latest
+  # shellCommand: omit to use the image CMD (starts a login shell as voidshell/UID 1000)
 
 ssh:
   port: 2222
@@ -184,11 +224,24 @@ kubectl get pod -n voidshell -l app.kubernetes.io/name=voidshell
 # Expected: 1/1 Running
 ```
 
-### 1. Test: allowed key → shell reached
+### 1. Test: allowed key → shell reached as correct user
 
 ```bash
 ssh -p 2222 devbox@<voidshell-service-ip>
-# Expected: interactive bash shell appears
+# Expected: interactive bash shell appears, prompt shows devbox@<hostname>
+```
+
+Inside the shell, verify identity and Homebrew:
+
+```bash
+whoami
+# Expected: voidshell  (pre-baked Linux user, UID 1000)
+
+echo $USER
+# Expected: devbox  (SSH username injected by voidshell)
+
+brew --version
+# Expected: Homebrew <version>
 ```
 
 Verify the workspace objects were created:

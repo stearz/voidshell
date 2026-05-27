@@ -210,6 +210,8 @@ func (m *Manager) waitForPodReady(ctx context.Context, id workspace.Identity) er
 }
 
 func buildPod(id workspace.Identity, cfg Config) *corev1.Pod {
+	uid := int64(1000)
+	nonRoot := true
 	return &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      id.PodName(),
@@ -222,8 +224,17 @@ func buildPod(id workspace.Identity, cfg Config) *corev1.Pod {
 				Name:    "workspace",
 				Image:   cfg.ShellImage,
 				Command: cfg.ShellCommand,
-				Stdin:   true,
-				TTY:     true,
+				Env: []corev1.EnvVar{
+					{Name: "VOIDSHELL_USER", Value: id.SSHUser},
+					{Name: "USER", Value: id.SSHUser},
+					{Name: "LOGNAME", Value: id.SSHUser},
+				},
+				SecurityContext: &corev1.SecurityContext{
+					RunAsUser:    &uid,
+					RunAsNonRoot: &nonRoot,
+				},
+				Stdin: true,
+				TTY:   true,
 				VolumeMounts: []corev1.VolumeMount{{
 					Name:      "home",
 					MountPath: workspaceMountPath,

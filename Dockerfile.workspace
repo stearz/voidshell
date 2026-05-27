@@ -11,19 +11,37 @@ RUN apt-get update && apt-get install -y \
     sudo \
     && rm -rf /var/lib/apt/lists/*
 
-RUN useradd -m -s /bin/bash voidshell \
-    && echo "voidshell ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers.d/voidshell \
-    && chmod 0440 /etc/sudoers.d/voidshell
+# Dedicated group + user for owning the Homebrew installation.
+# UID/GID 900 is below the workspace user (UID 1000) so there is no conflict.
+RUN groupadd -g 900 brew \
+    && useradd -m -s /bin/bash -u 900 -g brew linuxbrew
 
-USER voidshell
+USER linuxbrew
 RUN NONINTERACTIVE=1 /bin/bash -c \
     "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
 
-RUN echo 'eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"' >> /home/voidshell/.bashrc \
-    && echo 'eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"' >> /home/voidshell/.profile
+# Make the prefix group-writable so workspace users (added to the brew group)
+# can install packages. setgid on directories propagates the brew group to new
+# subdirectories created by brew install.
+USER root
+RUN chgrp -R brew /home/linuxbrew/.linuxbrew \
+    && chmod -R g+rwX /home/linuxbrew/.linuxbrew \
+    && find /home/linuxbrew/.linuxbrew -type d -exec chmod g+s {} +
 
-ENV PATH="/home/linuxbrew/.linuxbrew/bin:/home/linuxbrew/.linuxbrew/sbin:${PATH}"
+# Pre-baked workspace user: fixed UID 1000, member of the brew group.
+# The pod securityContext sets runAsUser:1000 so the container never starts as root.
+RUN useradd -m -s /bin/bash -u 1000 -G brew voidshell \
+    && echo 'voidshell ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/voidshell \
+    && chmod 0440 /etc/sudoers.d/voidshell
 
+# Wire Homebrew into all login shells.
+RUN echo 'eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"' \
+    > /etc/profile.d/homebrew.sh
+
+# Show the connecting SSH username in the shell prompt.
+COPY voidshell-prompt.sh /etc/profile.d/voidshell-prompt.sh
+
+USER voidshell
 WORKDIR /home/workspace
 
 CMD ["/bin/bash", "-l"]
