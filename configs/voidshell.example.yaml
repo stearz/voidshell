@@ -31,7 +31,12 @@ kubernetes:
 
 workspace:
   # OCI image used for the workspace Pod.
-  shellImage: ubuntu:22.04
+  # Use a custom image (e.g. built from Dockerfile.workspace) to get Homebrew
+  # and other tools pre-installed.
+  shellImage: ubuntu:26.04
   # Entrypoint executed inside the workspace Pod.
+  # Use "/bin/bash -l" (login shell) so that Homebrew's PATH is sourced from
+  # ~/.profile when using the workspace image built from Dockerfile.workspace.
   shellCommand:
     - /bin/bash
+    - -l
