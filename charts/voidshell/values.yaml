@@ -26,13 +26,14 @@ ssh:
   # TCP port the SSH server listens on inside the pod.
   port: 2222
   # Name of the Kubernetes Secret (in .Release.Namespace) that contains the
-  # SSH host private key under one of: ssh_host_ed25519_key, ssh_host_rsa_key,
-  # hostkey, or key.
-  # Create it once with:
+  # SSH host private key. Create it once with:
   #   ssh-keygen -t ed25519 -f /tmp/voidshell_host_key -N ""
   #   kubectl create secret generic voidshell-host-key \
-  #     --from-file=ssh_host_ed25519_key=/tmp/voidshell_host_key
+  #     --from-file=host-key=/tmp/voidshell_host_key
   hostKeySecret: "voidshell-host-key"
+  # Key within the secret that holds the private key. Defaults to "host-key".
+  # Override if your secret uses a different key name (e.g. ssh_host_ed25519_key).
+  hostKeySecretKey: "host-key"
 
 # Authentication settings.
 auth:
@@ -54,7 +55,7 @@ kubernetes:
 
 # Workspace container settings.
 workspace:
-  shellImage: "ubuntu:26.04"
+  shellImage: "ubuntu:24.04"
   shellCommand:
     - /bin/bash
 

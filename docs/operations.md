@@ -100,7 +100,7 @@ kubectl create namespace voidshell-guest
 # 2. Generate and store the SSH host key
 ssh-keygen -t ed25519 -f /tmp/voidshell_host_key -N ""
 kubectl create secret generic voidshell-host-key \
-  --from-file=ssh_host_ed25519_key=/tmp/voidshell_host_key \
+  --from-file=host-key=/tmp/voidshell_host_key \
   -n voidshell
 
 # 3. Install the chart
