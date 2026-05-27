@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.0](https://github.com/stearz/voidshell/compare/v0.3.0...v0.4.0) (2026-05-27)
+
+
+### Features
+
+* enhance workspace image with Homebrew and non-root user support ([decdf8c](https://github.com/stearz/voidshell/commit/decdf8c0fbe683b8c0a273579141af95e529a6ad))
+
 ## [0.3.0](https://github.com/stearz/voidshell/compare/v0.2.0...v0.3.0) (2026-05-25)
 
 
