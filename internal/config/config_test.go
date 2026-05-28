@@ -23,8 +23,8 @@ func TestLoadDefaults(t *testing.T) {
 	if cfg.Kubernetes.StorageSize != "5Gi" {
 		t.Errorf("default storage size: got %q, want %q", cfg.Kubernetes.StorageSize, "5Gi")
 	}
-	if cfg.Workspace.ShellImage != "ubuntu:22.04" {
-		t.Errorf("default shell image: got %q, want %q", cfg.Workspace.ShellImage, "ubuntu:22.04")
+	if cfg.Workspace.Image != "ghcr.io/stearz/voidshell-workspace:main" {
+		t.Errorf("default workspace image: got %q, want %q", cfg.Workspace.Image, "ghcr.io/stearz/voidshell-workspace:main")
 	}
 	if len(cfg.Workspace.ShellCommand) != 1 || cfg.Workspace.ShellCommand[0] != "/bin/bash" {
 		t.Errorf("default shell command: got %v, want [/bin/bash]", cfg.Workspace.ShellCommand)
@@ -45,7 +45,7 @@ kubernetes:
   storageClass: fast-ssd
   storageSize: 10Gi
 workspace:
-  shellImage: debian:12
+  image: debian:12
   shellCommand:
     - /bin/sh
     - -l
@@ -78,8 +78,8 @@ workspace:
 	if cfg.Kubernetes.StorageSize != "10Gi" {
 		t.Errorf("storage size: got %q", cfg.Kubernetes.StorageSize)
 	}
-	if cfg.Workspace.ShellImage != "debian:12" {
-		t.Errorf("shell image: got %q", cfg.Workspace.ShellImage)
+	if cfg.Workspace.Image != "debian:12" {
+		t.Errorf("workspace image: got %q", cfg.Workspace.Image)
 	}
 	if len(cfg.Workspace.ShellCommand) != 2 {
 		t.Errorf("shell command: got %v", cfg.Workspace.ShellCommand)
@@ -91,7 +91,7 @@ func TestLoadEnvOverrides(t *testing.T) {
 	t.Setenv("VOIDSHELL_K8S_GUEST_NAMESPACE", "env-ns")
 	t.Setenv("VOIDSHELL_AUTH_ALLOWED_USERS", "carol, dave")
 	t.Setenv("VOIDSHELL_AUTH_KEY_CACHE_TTL", "10m")
-	t.Setenv("VOIDSHELL_WORKSPACE_SHELL_IMAGE", "alpine:3.19")
+	t.Setenv("VOIDSHELL_WORKSPACE_IMAGE", "alpine:3.19")
 	t.Setenv("VOIDSHELL_WORKSPACE_SHELL_COMMAND", "/bin/sh,-l")
 
 	cfg, err := Load("")
@@ -110,8 +110,8 @@ func TestLoadEnvOverrides(t *testing.T) {
 	if cfg.Auth.KeyCacheTTL != "10m" {
 		t.Errorf("key cache TTL from env: got %q, want \"10m\"", cfg.Auth.KeyCacheTTL)
 	}
-	if cfg.Workspace.ShellImage != "alpine:3.19" {
-		t.Errorf("shell image from env: got %q", cfg.Workspace.ShellImage)
+	if cfg.Workspace.Image != "alpine:3.19" {
+		t.Errorf("workspace image from env: got %q", cfg.Workspace.Image)
 	}
 	if len(cfg.Workspace.ShellCommand) != 2 || cfg.Workspace.ShellCommand[0] != "/bin/sh" {
 		t.Errorf("shell command from env: got %v", cfg.Workspace.ShellCommand)

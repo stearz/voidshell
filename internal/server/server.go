@@ -49,6 +49,9 @@ func New(hostKey ssh.Signer, auth Authenticator, lifecycle WorkspaceLifecycle, a
 	}
 	s.sshCfg = &ssh.ServerConfig{
 		PublicKeyCallback: func(conn ssh.ConnMetadata, key ssh.PublicKey) (*ssh.Permissions, error) {
+			if err := validateSSHUsername(conn.User()); err != nil {
+				return nil, err
+			}
 			ghUser, err := auth.Authenticate(context.Background(), key, conn.User())
 			if err != nil {
 				return nil, err

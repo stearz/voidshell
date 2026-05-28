@@ -50,8 +50,8 @@ type KubernetesConfig struct {
 
 // WorkspaceConfig describes the workspace container.
 type WorkspaceConfig struct {
-	// ShellImage is the OCI image used for the workspace pod.
-	ShellImage string `yaml:"shellImage"`
+	// Image is the OCI image used for the workspace pod.
+	Image string `yaml:"image"`
 	// ShellCommand is the entrypoint executed inside the workspace pod.
 	ShellCommand []string `yaml:"shellCommand"`
 }
@@ -90,7 +90,7 @@ func defaults() Config {
 			StorageSize:    "5Gi",
 		},
 		Workspace: WorkspaceConfig{
-			ShellImage:   "ubuntu:22.04",
+			Image:        "ghcr.io/stearz/voidshell-workspace:main",
 			ShellCommand: []string{"/bin/bash"},
 		},
 	}
@@ -126,8 +126,8 @@ func applyEnv(c *Config) {
 	if v := os.Getenv("VOIDSHELL_K8S_STORAGE_SIZE"); v != "" {
 		c.Kubernetes.StorageSize = v
 	}
-	if v := os.Getenv("VOIDSHELL_WORKSPACE_SHELL_IMAGE"); v != "" {
-		c.Workspace.ShellImage = v
+	if v := os.Getenv("VOIDSHELL_WORKSPACE_IMAGE"); v != "" {
+		c.Workspace.Image = v
 	}
 	if v := os.Getenv("VOIDSHELL_WORKSPACE_SHELL_COMMAND"); v != "" {
 		c.Workspace.ShellCommand = splitTrimmed(v, ",")

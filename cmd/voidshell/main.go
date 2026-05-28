@@ -40,7 +40,7 @@ func main() {
 		Namespace:    cfg.Kubernetes.GuestNamespace,
 		StorageClass: cfg.Kubernetes.StorageClass,
 		StorageSize:  cfg.Kubernetes.StorageSize,
-		ShellImage:   cfg.Workspace.ShellImage,
+		Image:        cfg.Workspace.Image,
 		ShellCommand: cfg.Workspace.ShellCommand,
 	})
 	if err != nil {
@@ -65,7 +65,7 @@ func main() {
 	log.Info("voidshell starting",
 		"ssh_port", cfg.SSH.Port,
 		"guest_namespace", cfg.Kubernetes.GuestNamespace,
-		"shell_image", cfg.Workspace.ShellImage,
+		"shell_image", cfg.Workspace.Image,
 	)
 
 	if err := srv.ListenAndServe(ctx, addr); err != nil {

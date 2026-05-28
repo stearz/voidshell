@@ -126,6 +126,36 @@ func connectSSH(t *testing.T, addr string, hostPub ssh.PublicKey, sshUser string
 
 // --- tests ---
 
+// TestInvalidSSHUsernameRejected verifies that a username containing disallowed
+// characters is rejected before auth is attempted.
+func TestInvalidSSHUsernameRejected(t *testing.T) {
+	auth := &fakeAuth{githubUser: "octocat"}
+	lifecycle := &fakeLifecycle{}
+	attacher := &fakeAttacher{}
+
+	addr, hostPub := startTestServer(t, auth, lifecycle, attacher)
+
+	for _, badUser := range []string{"bad user", "shell;rm", "-leading", ""} {
+		_, clientPriv, _ := ed25519.GenerateKey(rand.Reader)
+		clientSigner, _ := ssh.NewSignerFromKey(clientPriv)
+		cfg := &ssh.ClientConfig{
+			User:            badUser,
+			Auth:            []ssh.AuthMethod{ssh.PublicKeys(clientSigner)},
+			HostKeyCallback: ssh.FixedHostKey(hostPub),
+		}
+		_, err := ssh.Dial("tcp", addr, cfg)
+		if err == nil {
+			t.Errorf("SSH dial with username %q: expected error, got nil", badUser)
+		}
+	}
+
+	lifecycle.mu.Lock()
+	defer lifecycle.mu.Unlock()
+	if len(lifecycle.ensureCalls) != 0 {
+		t.Errorf("EnsureWorkspace called %d times for invalid usernames, want 0", len(lifecycle.ensureCalls))
+	}
+}
+
 // TestAuthFailureNoPodCreated verifies that when auth rejects the offered key,
 // EnsureWorkspace is never called.
 func TestAuthFailureNoPodCreated(t *testing.T) {

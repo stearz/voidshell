@@ -17,7 +17,7 @@ func testConfig() Config {
 		Namespace:       "test-ns",
 		StorageClass:    "standard",
 		StorageSize:     "1Gi",
-		ShellImage:      "ubuntu:22.04",
+		Image:           "ubuntu:22.04",
 		ShellCommand:    []string{"/bin/bash"},
 		PodReadyTimeout: 5 * time.Second,
 		PodPollInterval: 10 * time.Millisecond,

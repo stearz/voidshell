@@ -8,7 +8,6 @@ RUN apt-get update && apt-get install -y \
     file \
     git \
     procps \
-    sudo \
     && rm -rf /var/lib/apt/lists/*
 
 # Dedicated group + user for owning the Homebrew installation.
@@ -30,9 +29,7 @@ RUN chgrp -R brew /home/linuxbrew/.linuxbrew \
 
 # Pre-baked workspace user: fixed UID 1000, member of the brew group.
 # The pod securityContext sets runAsUser:1000 so the container never starts as root.
-RUN useradd -m -s /bin/bash -u 1000 -G brew voidshell \
-    && echo 'voidshell ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/voidshell \
-    && chmod 0440 /etc/sudoers.d/voidshell
+RUN useradd -m -s /bin/bash -u 1000 -G brew voidshell
 
 # Wire Homebrew into all login shells.
 RUN echo 'eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"' \

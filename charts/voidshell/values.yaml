@@ -55,7 +55,10 @@ kubernetes:
 
 # Workspace container settings.
 workspace:
-  shellImage: "ubuntu:26.04"
+  # OCI image used for workspace pods. Defaults to the voidshell workspace image
+  # which has Homebrew pre-installed. Use any other image (e.g. ubuntu:26.04) for
+  # a minimal shell without a package manager.
+  image: "ghcr.io/stearz/voidshell-workspace:main"
   shellCommand:
     - /bin/bash
 
@@ -78,9 +81,16 @@ nodeSelector: {}
 tolerations: []
 affinity: {}
 
-# Optional NetworkPolicy restricting ingress to the voidshell pod.
+# NetworkPolicy controlling traffic to and from the voidshell pod.
 networkPolicy:
-  enabled: false
-  # CIDR blocks or pod/namespace selectors allowed to reach the SSH port.
-  # When empty any source is permitted (useful for a homelab LoadBalancer).
+  enabled: true
+  # CIDR blocks allowed to reach the SSH port.
+  # When empty, any source is permitted (useful for a homelab LoadBalancer).
   ingressCIDRs: []
+  # Egress to RFC 1918 private ranges (10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16,
+  # 100.64.0.0/10) is blocked by default to prevent the voidshell pod from being
+  # used to reach internal services. Add any private CIDRs the pod legitimately
+  # needs here — at minimum your Kubernetes API server address, e.g.:
+  #   - 10.96.0.1/32   # kubernetes.default ClusterIP
+  #   - 192.168.1.50/32 # on-prem API server
+  egressPrivateExceptions: []

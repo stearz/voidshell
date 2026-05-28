@@ -41,8 +41,8 @@ type Config struct {
 	StorageClass string
 	// StorageSize is the requested PVC capacity (e.g. "5Gi").
 	StorageSize string
-	// ShellImage is the OCI image run in workspace pods.
-	ShellImage string
+	// Image is the OCI image run in workspace pods.
+	Image string
 	// ShellCommand is the entrypoint executed inside the workspace container.
 	ShellCommand []string
 	// PodReadyTimeout is how long EnsureWorkspace waits for a pod to reach Running.
@@ -212,6 +212,7 @@ func (m *Manager) waitForPodReady(ctx context.Context, id workspace.Identity) er
 func buildPod(id workspace.Identity, cfg Config) *corev1.Pod {
 	uid := int64(1000)
 	nonRoot := true
+	noEscalation := false
 	return &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      id.PodName(),
@@ -222,7 +223,7 @@ func buildPod(id workspace.Identity, cfg Config) *corev1.Pod {
 			RestartPolicy: corev1.RestartPolicyNever,
 			Containers: []corev1.Container{{
 				Name:    "workspace",
-				Image:   cfg.ShellImage,
+				Image:   cfg.Image,
 				Command: cfg.ShellCommand,
 				Env: []corev1.EnvVar{
 					{Name: "VOIDSHELL_USER", Value: id.SSHUser},
@@ -230,8 +231,12 @@ func buildPod(id workspace.Identity, cfg Config) *corev1.Pod {
 					{Name: "LOGNAME", Value: id.SSHUser},
 				},
 				SecurityContext: &corev1.SecurityContext{
-					RunAsUser:    &uid,
-					RunAsNonRoot: &nonRoot,
+					RunAsUser:                &uid,
+					RunAsNonRoot:             &nonRoot,
+					AllowPrivilegeEscalation: &noEscalation,
+					Capabilities: &corev1.Capabilities{
+						Drop: []corev1.Capability{"ALL"},
+					},
 				},
 				Stdin: true,
 				TTY:   true,

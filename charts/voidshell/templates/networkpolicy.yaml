@@ -12,6 +12,7 @@ spec:
       {{- include "voidshell.selectorLabels" . | nindent 6 }}
   policyTypes:
     - Ingress
+    - Egress
   ingress:
     - ports:
         - protocol: TCP
@@ -23,4 +24,28 @@ spec:
             cidr: {{ . }}
         {{- end }}
       {{- end }}
+  egress:
+    # Allow DNS so the pod can resolve github.com and the Kubernetes API hostname.
+    - ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    # Allow all traffic to public internet addresses; block RFC 1918 private ranges
+    # so the voidshell pod cannot be used to reach internal services.
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 10.0.0.0/8
+              - 172.16.0.0/12
+              - 192.168.0.0/16
+              - 100.64.0.0/10
+    # User-specified exceptions — add your Kubernetes API server CIDR and any other
+    # internal endpoints the pod legitimately needs to reach.
+    {{- range .Values.networkPolicy.egressPrivateExceptions }}
+    - to:
+        - ipBlock:
+            cidr: {{ . }}
+    {{- end }}
 {{- end }}

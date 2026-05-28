@@ -30,13 +30,9 @@ kubernetes:
   storageSize: 5Gi
 
 workspace:
-  # OCI image used for the workspace Pod.
-  # Use an image built from Dockerfile.workspace to get Homebrew pre-installed
-  # and automatic user creation from the connecting SSH username.
-  shellImage: ubuntu:26.04
-  # Entrypoint executed inside the workspace Pod.
-  # Leave empty (omit this field) when using the workspace image — its
-  # ENTRYPOINT handles user creation and drops into a login shell automatically.
-  # Set explicitly (e.g. [/bin/bash]) only for plain base images.
+  # OCI image used for the workspace Pod. The default workspace image has
+  # Homebrew pre-installed. Switch to a plain image (e.g. ubuntu:26.04) for
+  # a minimal shell without a package manager.
+  image: ghcr.io/stearz/voidshell-workspace:main
   shellCommand:
     - /bin/bash
