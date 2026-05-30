@@ -1,8 +1,7 @@
 # ADR 001: Workspace Identity Model and Kubernetes Object Naming
 
 **Status:** Accepted  
-**Date:** 2026-05-23  
-**Source:** stearz/home-k8s#1046
+**Date:** 2026-05-23
 
 ---
 

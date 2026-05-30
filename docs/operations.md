@@ -1,7 +1,7 @@
-# voidshell — Phase 1 Operations Guide
+# voidshell — Operations Guide
 
-This document covers the phase 1 identity model, object naming, Helm values, expected
-lifecycle, security/RBAC assumptions, and a manual smoke-test checklist for the homelab.
+This document covers the identity model, object naming, Helm values, expected
+lifecycle, security/RBAC assumptions, and a manual smoke-test checklist.
 
 ---
 
@@ -353,15 +353,15 @@ kubectl get pvc -n voidshell-guest -l voidshell.io/workspace-id \
 
 ---
 
-## Phase 1 scope — what is intentionally excluded
+## Current scope — what is intentionally excluded
 
-The following are **not** part of phase 1 and should not be expected to work:
+The following are **not** currently supported:
 
 - Shared/multi-user workspace pods
 - Management UI or workspace listing API
 - Prometheus exporter or metrics
 - SFTP / SCP support
 - SSH port forwarding or tunnel support
-- Automated deployment into home-k8s (GitOps manifests live in home-k8s repo)
+- Automated GitOps deployment pipeline
 - Policy engine (time limits, storage quotas beyond PVC size)
 - Alternate identity providers (only GitHub public key auth)

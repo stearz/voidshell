@@ -8,6 +8,16 @@
         {
           "type": "generic",
           "path": "VERSION"
+        },
+        {
+          "type": "yaml",
+          "path": "charts/voidshell/Chart.yaml",
+          "jsonpath": "$.version"
+        },
+        {
+          "type": "yaml",
+          "path": "charts/voidshell/Chart.yaml",
+          "jsonpath": "$.appVersion"
         }
       ]
     }

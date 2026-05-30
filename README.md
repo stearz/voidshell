@@ -17,7 +17,7 @@ the full identity model and Kubernetes object naming rules.
 
 ## Status
 
-Phase 1 complete: SSH auth with GitHub public key validation, Kubernetes workspace lifecycle (PVC + pod), interactive shell sessions with PTY support, and a Helm chart for GitOps deployments.
+Functional. Supported features: SSH authentication via GitHub public key validation, Kubernetes workspace lifecycle management (PVC + pod), interactive shell sessions with PTY support, and a Helm chart for GitOps deployments.
 
 ## Prerequisites
 
@@ -166,6 +166,3 @@ helm install voidshell oci://ghcr.io/stearz/charts/voidshell \
   -f values-homelab.yaml
 ```
 
-## Author(s)
-
-- Stephan Schwarz ([@stearz](https://github.com/stearz))

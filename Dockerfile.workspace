@@ -36,7 +36,7 @@ RUN echo 'eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"' \
     > /etc/profile.d/homebrew.sh
 
 # Show the connecting SSH username in the shell prompt.
-COPY voidshell-prompt.sh /etc/profile.d/voidshell-prompt.sh
+COPY scripts/voidshell-prompt.sh /etc/profile.d/voidshell-prompt.sh
 
 USER voidshell
 WORKDIR /home/workspace
