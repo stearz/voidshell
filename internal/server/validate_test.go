@@ -38,7 +38,7 @@ func TestValidateSSHUsername(t *testing.T) {
 		"shell;cmd",       // semicolon
 		"shell$(inject)",  // shell metachar
 		"shell`backtick`", // backtick
-		long63 + "x",     // 64 chars — too long
+		long63 + "x",      // 64 chars — too long
 	}
 
 	for _, u := range invalid {
