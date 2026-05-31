@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.0](https://github.com/stearz/voidshell/compare/v0.4.0...v0.5.0) (2026-05-31)
+
+
+### Features
+
+* add container image scanning and validation for SSH usernames ([96e3488](https://github.com/stearz/voidshell/commit/96e3488d3b2828885478d55cda2cab4b24104936))
+
 ## [0.4.0](https://github.com/stearz/voidshell/compare/v0.3.0...v0.4.0) (2026-05-27)
 
 
