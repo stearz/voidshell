@@ -19,6 +19,9 @@ USER linuxbrew
 RUN NONINTERACTIVE=1 /bin/bash -c \
     "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
 
+RUN /home/linuxbrew/.linuxbrew/bin/brew update \
+    && /home/linuxbrew/.linuxbrew/bin/brew upgrade
+
 # Make the prefix group-writable so workspace users (added to the brew group)
 # can install packages. setgid on directories propagates the brew group to new
 # subdirectories created by brew install.
