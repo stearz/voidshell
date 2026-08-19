@@ -1,5 +1,5 @@
 # Build stage — cross-compile on the host platform for the target platform.
-FROM --platform=$BUILDPLATFORM golang:1.26-alpine AS build
+FROM --platform=$BUILDPLATFORM golang:1.27-alpine AS build
 ARG TARGETOS
 ARG TARGETARCH
 
