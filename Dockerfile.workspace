@@ -2,13 +2,16 @@ FROM ubuntu:26.04
 
 ENV DEBIAN_FRONTEND=noninteractive
 
+# The Ubuntu base includes Pebble for image-building use. The workspace starts
+# Bash directly and does not need an init/service manager.
 RUN apt-get update && apt-get install -y \
     build-essential \
     curl \
     file \
     git \
     procps \
-    && rm -rf /var/lib/apt/lists/*
+    && rm -rf /var/lib/apt/lists/* \
+    && rm -f /usr/bin/pebble
 
 # Dedicated group + user for owning the Homebrew installation.
 # UID/GID 900 is below the workspace user (UID 1000) so there is no conflict.
@@ -21,6 +24,16 @@ RUN NONINTERACTIVE=1 /bin/bash -c \
 
 RUN /home/linuxbrew/.linuxbrew/bin/brew update \
     && /home/linuxbrew/.linuxbrew/bin/brew upgrade
+
+# Homebrew's portable Ruby can lag security releases of its default gems.
+# Install fixed versions, verify that Ruby selects them, then remove only the
+# vulnerable default-gem metadata so scanners do not report unreachable copies.
+RUN ruby_root="$(/home/linuxbrew/.linuxbrew/bin/brew --repository)/Library/Homebrew/vendor/portable-ruby/current" \
+    && "$ruby_root/bin/gem" update json resolv --no-document \
+    && "$ruby_root/bin/ruby" -rjson -rresolv -e \
+       'abort "vulnerable portable Ruby gems" unless Gem.loaded_specs.fetch("json").version >= Gem::Version.new("2.19.2") && Gem.loaded_specs.fetch("resolv").version >= Gem::Version.new("0.7.2")' \
+    && find "$ruby_root/lib/ruby/gems" -path '*/specifications/default/json-2.18.0.gemspec' -delete \
+    && find "$ruby_root/lib/ruby/gems" -path '*/specifications/default/resolv-0.7.0.gemspec' -delete
 
 # Make the prefix group-writable so workspace users (added to the brew group)
 # can install packages. setgid on directories propagates the brew group to new
