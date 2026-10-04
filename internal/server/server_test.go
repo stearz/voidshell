@@ -31,21 +31,26 @@ func (f *fakeAuth) Authenticate(_ context.Context, _ ssh.PublicKey, _ string) (s
 	return f.githubUser, f.err
 }
 
+type ensureCall struct {
+	identity workspace.Identity
+	mode     workspace.StorageMode
+}
+
 type fakeLifecycle struct {
 	mu          sync.Mutex
-	ensureCalls []workspace.Identity
+	ensureCalls []ensureCall
 	deleteCalls []workspace.Identity
 	ensureErr   error
 }
 
-func (f *fakeLifecycle) EnsureWorkspace(_ context.Context, id workspace.Identity) error {
+func (f *fakeLifecycle) EnsureWorkspace(_ context.Context, id workspace.Identity, mode workspace.StorageMode) error {
 	f.mu.Lock()
-	f.ensureCalls = append(f.ensureCalls, id)
+	f.ensureCalls = append(f.ensureCalls, ensureCall{identity: id, mode: mode})
 	f.mu.Unlock()
 	return f.ensureErr
 }
 
-func (f *fakeLifecycle) DeletePod(_ context.Context, id workspace.Identity) error {
+func (f *fakeLifecycle) DeletePod(_ context.Context, id workspace.Identity, _ workspace.StorageMode) error {
 	f.mu.Lock()
 	f.deleteCalls = append(f.deleteCalls, id)
 	f.mu.Unlock()
@@ -58,7 +63,7 @@ type fakeAttacher struct {
 	err         error
 }
 
-func (f *fakeAttacher) Attach(_ context.Context, _ workspace.Identity, _ bool, _ remotecommand.TerminalSizeQueue, _ io.Reader, _, _ io.Writer) error {
+func (f *fakeAttacher) Attach(_ context.Context, _ workspace.Identity, _ workspace.StorageMode, _ bool, _ remotecommand.TerminalSizeQueue, _ io.Reader, _, _ io.Writer) error {
 	f.mu.Lock()
 	f.attachCalls++
 	f.mu.Unlock()
@@ -254,6 +259,36 @@ func TestEnsureWorkspaceFailureNoPodLeft(t *testing.T) {
 	}
 }
 
+func TestPersistentSelectorUsesLogicalWorkspaceName(t *testing.T) {
+	auth := &fakeAuth{githubUser: "octocat"}
+	lifecycle := &fakeLifecycle{}
+	attacher := &fakeAttacher{}
+
+	addr, hostPub := startTestServer(t, auth, lifecycle, attacher)
+	client := connectSSH(t, addr, hostPub, "persist.project")
+
+	session, err := client.NewSession()
+	if err != nil {
+		t.Fatalf("NewSession: %v", err)
+	}
+	session.RequestPty("xterm", 24, 80, ssh.TerminalModes{}) //nolint:errcheck
+	session.Shell()                                          //nolint:errcheck
+	session.Wait()                                           //nolint:errcheck
+
+	lifecycle.mu.Lock()
+	defer lifecycle.mu.Unlock()
+	if len(lifecycle.ensureCalls) != 1 {
+		t.Fatalf("EnsureWorkspace called %d times, want 1", len(lifecycle.ensureCalls))
+	}
+	got := lifecycle.ensureCalls[0]
+	if got.mode != workspace.StoragePersistent {
+		t.Errorf("storage mode = %q, want %q", got.mode, workspace.StoragePersistent)
+	}
+	if got.identity.SSHUser != "project" {
+		t.Errorf("SSHUser = %q, want project", got.identity.SSHUser)
+	}
+}
+
 // TestWorkspaceIdentityFromAuth verifies that the workspace identity uses the
 // authenticated GitHub username, not just the raw SSH username.
 func TestWorkspaceIdentityFromAuth(t *testing.T) {
@@ -275,10 +310,13 @@ func TestWorkspaceIdentityFromAuth(t *testing.T) {
 		t.Fatal("EnsureWorkspace not called")
 	}
 	got := lifecycle.ensureCalls[0]
-	if got.GithubUser != "octocat" {
-		t.Errorf("GithubUser = %q, want %q", got.GithubUser, "octocat")
+	if got.identity.GithubUser != "octocat" {
+		t.Errorf("GithubUser = %q, want %q", got.identity.GithubUser, "octocat")
 	}
-	if got.SSHUser != "devbox" {
-		t.Errorf("SSHUser = %q, want %q", got.SSHUser, "devbox")
+	if got.identity.SSHUser != "devbox" {
+		t.Errorf("SSHUser = %q, want %q", got.identity.SSHUser, "devbox")
+	}
+	if got.mode != workspace.StorageEphemeral {
+		t.Errorf("storage mode = %q, want %q", got.mode, workspace.StorageEphemeral)
 	}
 }

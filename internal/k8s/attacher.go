@@ -20,6 +20,7 @@ import (
 func (m *Manager) Attach(
 	ctx context.Context,
 	id workspace.Identity,
+	mode workspace.StorageMode,
 	tty bool,
 	resizeQueue remotecommand.TerminalSizeQueue,
 	stdin io.Reader,
@@ -31,7 +32,7 @@ func (m *Manager) Attach(
 
 	req := m.client.CoreV1().RESTClient().Post().
 		Resource("pods").
-		Name(id.PodName()).
+		Name(id.PodNameFor(mode)).
 		Namespace(m.cfg.Namespace).
 		SubResource("attach").
 		Param("container", "workspace").

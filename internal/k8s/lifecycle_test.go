@@ -37,6 +37,101 @@ func setPodPhase(t *testing.T, client *fake.Clientset, ns, name string, phase co
 	}
 }
 
+func ensureWorkspaceRunning(t *testing.T, mgr *Manager, client *fake.Clientset, id workspace.Identity, mode workspace.StorageMode) {
+	t.Helper()
+	errCh := make(chan error, 1)
+	go func() { errCh <- mgr.EnsureWorkspace(context.Background(), id, mode) }()
+
+	deadline := time.Now().Add(time.Second)
+	for {
+		if _, err := client.CoreV1().Pods("test-ns").Get(context.Background(), id.PodNameFor(mode), metav1.GetOptions{}); err == nil {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("workspace pod was not created")
+		}
+		time.Sleep(time.Millisecond)
+	}
+	setPodPhase(t, client, "test-ns", id.PodNameFor(mode), corev1.PodRunning)
+	if err := <-errCh; err != nil {
+		t.Fatalf("EnsureWorkspace: %v", err)
+	}
+}
+
+func TestEnsureWorkspace_EphemeralUsesEmptyDirWithoutPVC(t *testing.T) {
+	client := fake.NewSimpleClientset()
+	mgr := New(client, testConfig())
+	id := workspace.New("alice", "dev")
+	ctx := context.Background()
+
+	ensureWorkspaceRunning(t, mgr, client, id, workspace.StorageEphemeral)
+
+	pvcs, err := client.CoreV1().PersistentVolumeClaims("test-ns").List(ctx, metav1.ListOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(pvcs.Items) != 0 {
+		t.Errorf("PVCs = %d, want 0", len(pvcs.Items))
+	}
+
+	pod, err := client.CoreV1().Pods("test-ns").Get(ctx, id.PodNameFor(workspace.StorageEphemeral), metav1.GetOptions{})
+	if err != nil {
+		t.Fatalf("workspace pod not found: %v", err)
+	}
+	if pod.Spec.Volumes[0].EmptyDir == nil {
+		t.Error("workspace volume is not an EmptyDir")
+	}
+}
+
+func TestEnsureWorkspace_PersistentUsesPVC(t *testing.T) {
+	client := fake.NewSimpleClientset()
+	mgr := New(client, testConfig())
+	id := workspace.New("alice", "dev")
+	ctx := context.Background()
+
+	ensureWorkspaceRunning(t, mgr, client, id, workspace.StoragePersistent)
+
+	if _, err := client.CoreV1().PersistentVolumeClaims("test-ns").Get(ctx, id.PVCName(), metav1.GetOptions{}); err != nil {
+		t.Fatalf("persistent workspace PVC not found: %v", err)
+	}
+	pod, err := client.CoreV1().Pods("test-ns").Get(ctx, id.PodNameFor(workspace.StoragePersistent), metav1.GetOptions{})
+	if err != nil {
+		t.Fatalf("workspace pod not found: %v", err)
+	}
+	if pod.Spec.Volumes[0].PersistentVolumeClaim == nil {
+		t.Error("workspace volume is not a PVC")
+	}
+}
+
+func TestEnsurePod_StorageModesUseSeparatePods(t *testing.T) {
+	client := fake.NewSimpleClientset()
+	mgr := New(client, testConfig())
+	id := workspace.New("alice", "project")
+	ctx := context.Background()
+
+	if err := mgr.ensurePod(ctx, id, workspace.StorageEphemeral); err != nil {
+		t.Fatalf("ensure ephemeral pod: %v", err)
+	}
+	if err := mgr.ensurePod(ctx, id, workspace.StoragePersistent); err != nil {
+		t.Fatalf("ensure persistent pod: %v", err)
+	}
+
+	ephemeral, err := client.CoreV1().Pods("test-ns").Get(ctx, id.PodNameFor(workspace.StorageEphemeral), metav1.GetOptions{})
+	if err != nil {
+		t.Fatalf("ephemeral pod not found: %v", err)
+	}
+	persistent, err := client.CoreV1().Pods("test-ns").Get(ctx, id.PodNameFor(workspace.StoragePersistent), metav1.GetOptions{})
+	if err != nil {
+		t.Fatalf("persistent pod not found: %v", err)
+	}
+	if ephemeral.Spec.Volumes[0].EmptyDir == nil {
+		t.Error("ephemeral pod does not use EmptyDir")
+	}
+	if persistent.Spec.Volumes[0].PersistentVolumeClaim == nil {
+		t.Error("persistent pod does not use a PVC")
+	}
+}
+
 // TestEnsurePVC verifies that a PVC is created with the correct spec.
 func TestEnsurePVC(t *testing.T) {
 	client := fake.NewSimpleClientset()
@@ -93,16 +188,16 @@ func TestEnsurePod(t *testing.T) {
 	mgr := New(client, testConfig())
 	id := workspace.New("alice", "dev")
 
-	if err := mgr.ensurePod(context.Background(), id); err != nil {
+	if err := mgr.ensurePod(context.Background(), id, workspace.StoragePersistent); err != nil {
 		t.Fatalf("ensurePod: %v", err)
 	}
 
-	pod, err := client.CoreV1().Pods("test-ns").Get(context.Background(), id.PodName(), metav1.GetOptions{})
+	pod, err := client.CoreV1().Pods("test-ns").Get(context.Background(), id.PodNameFor(workspace.StoragePersistent), metav1.GetOptions{})
 	if err != nil {
 		t.Fatalf("pod not found after create: %v", err)
 	}
-	if pod.Name != id.PodName() {
-		t.Errorf("pod name = %q, want %q", pod.Name, id.PodName())
+	if pod.Name != id.PodNameFor(workspace.StoragePersistent) {
+		t.Errorf("pod name = %q, want %q", pod.Name, id.PodNameFor(workspace.StoragePersistent))
 	}
 	if pod.Labels[workspaceLabel] != id.WorkspaceID() {
 		t.Errorf("pod label = %q, want %q", pod.Labels[workspaceLabel], id.WorkspaceID())
@@ -130,7 +225,7 @@ func TestEnsurePod_Idempotent(t *testing.T) {
 	id := workspace.New("alice", "dev")
 
 	for i := range 2 {
-		if err := mgr.ensurePod(context.Background(), id); err != nil {
+		if err := mgr.ensurePod(context.Background(), id, workspace.StoragePersistent); err != nil {
 			t.Fatalf("ensurePod call %d: %v", i+1, err)
 		}
 	}
@@ -151,12 +246,12 @@ func TestWaitForPodReady_Running(t *testing.T) {
 	mgr := New(client, testConfig())
 	id := workspace.New("alice", "dev")
 
-	if err := mgr.ensurePod(context.Background(), id); err != nil {
+	if err := mgr.ensurePod(context.Background(), id, workspace.StoragePersistent); err != nil {
 		t.Fatal(err)
 	}
-	setPodPhase(t, client, "test-ns", id.PodName(), corev1.PodRunning)
+	setPodPhase(t, client, "test-ns", id.PodNameFor(workspace.StoragePersistent), corev1.PodRunning)
 
-	if err := mgr.waitForPodReady(context.Background(), id); err != nil {
+	if err := mgr.waitForPodReady(context.Background(), id, workspace.StoragePersistent); err != nil {
 		t.Errorf("waitForPodReady: %v", err)
 	}
 }
@@ -168,12 +263,12 @@ func TestWaitForPodReady_Failed(t *testing.T) {
 	mgr := New(client, testConfig())
 	id := workspace.New("alice", "dev")
 
-	if err := mgr.ensurePod(context.Background(), id); err != nil {
+	if err := mgr.ensurePod(context.Background(), id, workspace.StoragePersistent); err != nil {
 		t.Fatal(err)
 	}
-	setPodPhase(t, client, "test-ns", id.PodName(), corev1.PodFailed)
+	setPodPhase(t, client, "test-ns", id.PodNameFor(workspace.StoragePersistent), corev1.PodFailed)
 
-	if err := mgr.waitForPodReady(context.Background(), id); err == nil {
+	if err := mgr.waitForPodReady(context.Background(), id, workspace.StoragePersistent); err == nil {
 		t.Error("waitForPodReady returned nil for a Failed pod, want error")
 	}
 }
@@ -185,14 +280,14 @@ func TestWaitForPodReady_Timeout(t *testing.T) {
 	mgr := New(client, testConfig())
 	id := workspace.New("alice", "dev")
 
-	if err := mgr.ensurePod(context.Background(), id); err != nil {
+	if err := mgr.ensurePod(context.Background(), id, workspace.StoragePersistent); err != nil {
 		t.Fatal(err)
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
 	defer cancel()
 
-	if err := mgr.waitForPodReady(ctx, id); err == nil {
+	if err := mgr.waitForPodReady(ctx, id, workspace.StoragePersistent); err == nil {
 		t.Error("waitForPodReady returned nil on timeout, want error")
 	}
 }
@@ -207,15 +302,15 @@ func TestDeletePod_KeepsPVC(t *testing.T) {
 	if err := mgr.ensurePVC(ctx, id); err != nil {
 		t.Fatal(err)
 	}
-	if err := mgr.ensurePod(ctx, id); err != nil {
+	if err := mgr.ensurePod(ctx, id, workspace.StoragePersistent); err != nil {
 		t.Fatal(err)
 	}
 
-	if err := mgr.DeletePod(ctx, id); err != nil {
+	if err := mgr.DeletePod(ctx, id, workspace.StoragePersistent); err != nil {
 		t.Fatalf("DeletePod: %v", err)
 	}
 
-	if _, err := client.CoreV1().Pods("test-ns").Get(ctx, id.PodName(), metav1.GetOptions{}); err == nil {
+	if _, err := client.CoreV1().Pods("test-ns").Get(ctx, id.PodNameFor(workspace.StoragePersistent), metav1.GetOptions{}); err == nil {
 		t.Error("pod still exists after DeletePod")
 	}
 	if _, err := client.CoreV1().PersistentVolumeClaims("test-ns").Get(ctx, id.PVCName(), metav1.GetOptions{}); err != nil {
@@ -229,7 +324,7 @@ func TestDeletePod_Idempotent(t *testing.T) {
 	mgr := New(client, testConfig())
 	id := workspace.New("alice", "dev")
 
-	if err := mgr.DeletePod(context.Background(), id); err != nil {
+	if err := mgr.DeletePod(context.Background(), id, workspace.StoragePersistent); err != nil {
 		t.Errorf("DeletePod on missing pod = %v, want nil", err)
 	}
 }
@@ -251,7 +346,7 @@ func TestIsolation(t *testing.T) {
 		if err := mgr.ensurePVC(ctx, id); err != nil {
 			t.Fatalf("ensurePVC(%v): %v", id, err)
 		}
-		if err := mgr.ensurePod(ctx, id); err != nil {
+		if err := mgr.ensurePod(ctx, id, workspace.StoragePersistent); err != nil {
 			t.Fatalf("ensurePod(%v): %v", id, err)
 		}
 	}

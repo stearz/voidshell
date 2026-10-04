@@ -5,58 +5,65 @@ lifecycle, security/RBAC assumptions, and a manual smoke-test checklist.
 
 ---
 
-## Identity model
+## Identity and storage selection
 
-A voidshell workspace is uniquely identified by the tuple:
+A voidshell workspace is identified by the tuple:
 
 ```
-(github_username, ssh_username)
+(github_username, workspace_name)
 ```
 
-- **`github_username`** — the authenticated GitHub account whose public keys were
-  accepted during the SSH handshake. This is the security boundary.
-- **`ssh_username`** — the username the client used in the SSH connection (e.g.
-  `ssh devbox@voidshell.homelab`). This acts as a workspace *selector*, not an
-  auth factor. One GitHub account can have multiple independent workspaces by
-  using different SSH usernames.
+- **`github_username`** is the authenticated GitHub account whose public keys
+  were accepted during the SSH handshake. It is the security boundary.
+- **`workspace_name`** is selected through the SSH username. It is not an auth
+  factor; one GitHub account can select independent workspaces.
+
+The SSH username also selects storage mode:
+
+```text
+<workspace>          ephemeral (default)
+persist.<workspace>  persistent
+```
+
+An ordinary selector creates an `emptyDir`-backed pod and no PVC. A persistent
+selector strips `persist.` before deriving the logical workspace name and
+creates/reuses its PVC. For example, `persist.devbox` has the logical workspace
+name `devbox`.
 
 ### Key properties
 
 | Property | Description |
 |---|---|
-| Two users, same SSH username | Different workspaces (GitHub user is the discriminator) |
-| Same GitHub user, different SSH usernames | Different workspaces (SSH username is the workspace label) |
-| Same GitHub user, same SSH username | Same workspace — PVC is reused across reconnects |
+| Two users, same selector | Different workspaces; GitHub user is the discriminator |
+| Same user, different logical workspace names | Different workspace identities |
+| `devbox` | Disposable `emptyDir` workspace; no PVC is created |
+| `persist.devbox` | A PVC-backed `devbox` workspace; data survives pod deletion |
 | Unknown SSH public key | Connection rejected before any workspace is touched |
 
 ---
 
 ## Kubernetes object naming
 
-All workspace objects use a deterministic, Kubernetes-safe name derived from the
-identity tuple:
+The stable workspace ID is derived from the logical identity:
 
 ```
-workspace_id = vs-<normalized-github>-<normalized-ssh>-<hash6>
-pod_name     = shell-<workspace_id>
-pvc_name     = home-<workspace_id>
+workspace_id = vs-<normalized-github>-<normalized-workspace>-<hash6>
+persistent_pod_name = shell-<workspace_id>
+ephemeral_pod_name  = shell-<workspace_id>-ephemeral
+pvc_name            = home-<workspace_id>  # persistent mode only
 ```
+
+The storage-specific pod names prevent an ephemeral and persistent session for
+the same logical workspace from attaching to a pod with the wrong volume type.
+The persistent pod name remains compatible with the original naming scheme.
 
 **Normalization rules:**
 - Lowercased, non-alphanumeric characters replaced with `-`, leading/trailing
   hyphens stripped, truncated to 26 characters per segment.
-- A 6-character SHA-256 hash of the raw (un-normalized) tuple ensures uniqueness
-  even if normalized segments collide.
+- A 6-character SHA-256 hash of the raw (un-normalized) identity ensures
+  uniqueness even if normalized segments collide.
 
-**Example:**
-
-| GitHub user | SSH username | workspace_id |
-|---|---|---|
-| `stearz` | `devbox` | `vs-stearz-devbox-xxxxxx` |
-| `stearz` | `workbox` | `vs-stearz-workbox-yyyyyy` |
-| `octocat` | `devbox` | `vs-octocat-devbox-zzzzzz` |
-
-The full workspace ID is always ≤ 63 characters (RFC 1123 DNS label compliant).
+The workspace ID is always ≤ 63 characters (RFC 1123 DNS label compliant).
 
 ---
 
@@ -153,31 +160,20 @@ helm upgrade --install voidshell oci://ghcr.io/stearz/charts/voidshell \
 
 ## Expected session lifecycle
 
-```
-Client                          voidshell                        Kubernetes
-  │                                  │                                │
-  │── ssh devbox@voidshell ─────────>│                                │
-  │   (offers SSH public key)        │── verify key against GitHub ──>│
-  │                                  │<─ key matches stearz ──────────│
-  │                                  │                                │
-  │                                  │── GET PVC home-vs-... ────────>│
-  │                                  │   (not found → CREATE) ────────│
-  │                                  │── GET pod shell-vs-... ───────>│
-  │                                  │   (not found → CREATE) ────────│
-  │                                  │── wait for pod Running ───────>│
-  │                                  │<─ pod Running ─────────────────│
-  │                                  │                                │
-  │<── PTY attached ────────────────>│── pods/attach SPDY stream ────>│
-  │  (interactive shell)             │                                │
-  │                                  │                                │
-  │── disconnect ───────────────────>│                                │
-  │                                  │── DELETE pod shell-vs-... ────>│
-  │                                  │   PVC home-vs-... RETAINED ────│
+An ordinary session performs only pod creation with an `emptyDir` volume:
+
+```text
+ssh devbox@voidshell → CREATE shell-...-ephemeral → attach → DELETE pod
 ```
 
-**PVC retention is intentional.** The home directory persists across reconnects.
-When the same `(github_user, ssh_user)` pair reconnects, the existing PVC is
-reused and data is preserved.
+A persistent session additionally creates or reuses the stable PVC:
+
+```text
+ssh persist.devbox@voidshell → GET/CREATE home-vs-... → CREATE shell-vs-... → attach → DELETE pod
+```
+
+Only the persistent-mode PVC remains after disconnect. Ordinary workspace data
+disappears with its pod.
 
 ---
 
@@ -224,50 +220,28 @@ kubectl get pod -n voidshell -l app.kubernetes.io/name=voidshell
 # Expected: 1/1 Running
 ```
 
-### 1. Test: allowed key → shell reached as correct user
+### 1. Test: ordinary selector creates no PVC
 
 ```bash
 ssh -p 2222 devbox@<voidshell-service-ip>
 # Expected: interactive bash shell appears, prompt shows devbox@<hostname>
+# After disconnect: the shell-...-ephemeral pod is gone and no PVC was created.
 ```
 
-Inside the shell, verify identity and Homebrew:
+`echo $USER` should return `devbox`, the logical workspace name.
+
+### 2. Test: persistent selector retains a PVC
 
 ```bash
-whoami
-# Expected: voidshell  (pre-baked Linux user, UID 1000)
-
-echo $USER
-# Expected: devbox  (SSH username injected by voidshell)
-
-brew --version
-# Expected: Homebrew <version>
+ssh -p 2222 persist.devbox@<voidshell-service-ip> 'echo hello > /home/workspace/test.txt'
+ssh -p 2222 persist.devbox@<voidshell-service-ip> 'cat /home/workspace/test.txt'
+# Expected: hello
 ```
 
-Verify the workspace objects were created:
+The persistent pod is deleted after each session, while
+`home-vs-stearz-devbox-xxxxxx` remains Bound.
 
-```bash
-kubectl get pod -n voidshell-guest
-# Expected: shell-vs-stearz-devbox-xxxxxx  Running
-
-kubectl get pvc -n voidshell-guest
-# Expected: home-vs-stearz-devbox-xxxxxx  Bound
-
-kubectl logs -n voidshell <voidshell-pod> | grep "ssh: connection"
-# Expected: github_user=stearz ssh_user=devbox
-```
-
-After disconnecting:
-
-```bash
-kubectl get pod -n voidshell-guest
-# Expected: pod is gone
-
-kubectl get pvc -n voidshell-guest
-# Expected: PVC still present (intentionally retained)
-```
-
-### 2. Test: unknown key → connection rejected
+### 3. Test: unknown key → connection rejected
 
 Using a key that is **not** in stearz's GitHub account:
 
@@ -284,13 +258,11 @@ kubectl get pod -n voidshell-guest
 # Expected: no new pods
 ```
 
-### 3. Test: same GitHub user, two SSH usernames → separate workspaces
+### 4. Test: two persistent logical workspaces → separate PVCs
 
 ```bash
-# First workspace
-ssh -p 2222 devbox@<voidshell-service-ip> &
-# Second workspace
-ssh -p 2222 workbox@<voidshell-service-ip> &
+ssh -p 2222 persist.devbox@<voidshell-service-ip> &
+ssh -p 2222 persist.workbox@<voidshell-service-ip> &
 ```
 
 ```bash
@@ -298,16 +270,6 @@ kubectl get pvc -n voidshell-guest
 # Expected: two PVCs with different workspace IDs:
 #   home-vs-stearz-devbox-xxxxxx
 #   home-vs-stearz-workbox-yyyyyy
-```
-
-### 4. Test: reconnect reuses PVC
-
-```bash
-# Create a file in the workspace
-ssh -p 2222 devbox@<voidshell-service-ip> 'echo hello > ~/test.txt'
-# Reconnect
-ssh -p 2222 devbox@<voidshell-service-ip> 'cat ~/test.txt'
-# Expected: hello
 ```
 
 ### 5. Test: PTY and window resize

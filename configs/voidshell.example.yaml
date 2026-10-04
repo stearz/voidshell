@@ -24,9 +24,9 @@ auth:
 kubernetes:
   # Namespace where workspace Pods and PVCs are created.
   guestNamespace: voidshell-workspaces
-  # StorageClass used for workspace PVCs.
+  # StorageClass used only when a user selects persist.<workspace>.
   storageClass: standard
-  # PVC size requested for each workspace.
+  # PVC size requested only for persistent workspaces.
   storageSize: 5Gi
 
 workspace:

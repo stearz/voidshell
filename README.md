@@ -7,17 +7,37 @@ Replaces the ContainerSSH idea with explicit arm64 support.
 
 voidshell accepts SSH connections, authenticates the connecting user against a
 GitHub-user allow-list, and provisions an ephemeral Kubernetes workspace pod for
-them. The workspace identity is the tuple `(github_username, ssh_username)`,
-which allows one GitHub account to maintain multiple independent workspaces.
+them by default. The workspace identity is the tuple `(github_username,
+workspace_name)`, which allows one GitHub account to maintain multiple
+independent workspaces.
 
-Inside the workspace pod you run as the SSH username you connected with — not as
-`root` or a generic user. See [Workspace image](#workspace-image) below and
+Inside the workspace pod you run as the logical workspace name you selected — not
+as `root` or a generic user. See [Workspace image](#workspace-image) below and
 [docs/adr/001-identity-and-naming.md](docs/adr/001-identity-and-naming.md) for
-the full identity model and Kubernetes object naming rules.
+the Kubernetes object naming rules.
 
 ## Status
 
-Functional. Supported features: SSH authentication via GitHub public key validation, Kubernetes workspace lifecycle management (PVC + pod), interactive shell sessions with PTY support, and a Helm chart for GitOps deployments.
+Functional. Supported features: SSH authentication via GitHub public key validation, ephemeral-by-default Kubernetes workspace lifecycle management with opt-in PVCs, interactive shell sessions with PTY support, and a Helm chart for GitOps deployments.
+
+## Workspace storage
+
+The SSH username selects both a logical workspace name and its storage mode:
+
+```sh
+# Default: a disposable workspace backed by emptyDir; no PVC is created.
+ssh project@voidshell.example.net
+
+# Opt in to a Longhorn (or configured storage-class) PVC for this workspace.
+ssh persist.project@voidshell.example.net
+```
+
+`persist.` is removed before workspace identity and environment variables are
+created, so the second command uses `project` as its logical workspace name.
+The configured Kubernetes `storageClass` and `storageSize` apply only to this
+persistent mode. See
+[ADR 003](docs/adr/003-workspace-storage-selection.md) for the complete
+selection contract and compatibility consequences.
 
 ## Prerequisites
 

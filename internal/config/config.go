@@ -42,9 +42,9 @@ type AuthConfig struct {
 type KubernetesConfig struct {
 	// GuestNamespace is the namespace where workspace pods and PVCs are created.
 	GuestNamespace string `yaml:"guestNamespace"`
-	// StorageClass is the PVC storage class used for workspace volumes.
+	// StorageClass is the PVC storage class used by persistent workspaces.
 	StorageClass string `yaml:"storageClass"`
-	// StorageSize is the requested PVC size (e.g. "5Gi").
+	// StorageSize is the PVC size requested by persistent workspaces (e.g. "5Gi").
 	StorageSize string `yaml:"storageSize"`
 }
 

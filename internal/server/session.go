@@ -61,7 +61,7 @@ func (q *terminalSizeQueue) stop() {
 	close(q.ch)
 }
 
-func (s *Server) handleSession(ctx context.Context, newChan ssh.NewChannel, id workspace.Identity) {
+func (s *Server) handleSession(ctx context.Context, newChan ssh.NewChannel, id workspace.Identity, mode workspace.StorageMode) {
 	ch, reqs, err := newChan.Accept()
 	if err != nil {
 		s.log.Error("session: channel accept failed", "error", err)
@@ -91,7 +91,7 @@ func (s *Server) handleSession(ctx context.Context, newChan ssh.NewChannel, id w
 			req.Reply(true, nil)
 			sizeQueue.push(initCols, initRows)
 			go drainRequests(reqs, sizeQueue)
-			s.runShellSession(ctx, ch, id, ptyRequested, sizeQueue)
+			s.runShellSession(ctx, ch, id, mode, ptyRequested, sizeQueue)
 			return
 
 		case "exec":
@@ -126,8 +126,8 @@ func drainRequests(reqs <-chan *ssh.Request, sizeQueue *terminalSizeQueue) {
 	}
 }
 
-func (s *Server) runShellSession(ctx context.Context, ch ssh.Channel, id workspace.Identity, tty bool, sizeQueue *terminalSizeQueue) {
-	if err := s.lifecycle.EnsureWorkspace(ctx, id); err != nil {
+func (s *Server) runShellSession(ctx context.Context, ch ssh.Channel, id workspace.Identity, mode workspace.StorageMode, tty bool, sizeQueue *terminalSizeQueue) {
+	if err := s.lifecycle.EnsureWorkspace(ctx, id, mode); err != nil {
 		s.log.Error("session: workspace setup failed",
 			"error", err,
 			"workspace", id.WorkspaceID(),
@@ -142,7 +142,7 @@ func (s *Server) runShellSession(ctx context.Context, ch ssh.Channel, id workspa
 	defer func() {
 		cleanupCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
-		if err := s.lifecycle.DeletePod(cleanupCtx, id); err != nil {
+		if err := s.lifecycle.DeletePod(cleanupCtx, id, mode); err != nil {
 			s.log.Error("session: pod cleanup failed",
 				"error", err,
 				"workspace", id.WorkspaceID(),
@@ -156,7 +156,7 @@ func (s *Server) runShellSession(ctx context.Context, ch ssh.Channel, id workspa
 		stderr = ch.Stderr()
 	}
 
-	if err := s.attacher.Attach(ctx, id, tty, sizeQueue, ch, ch, stderr); err != nil {
+	if err := s.attacher.Attach(ctx, id, mode, tty, sizeQueue, ch, ch, stderr); err != nil {
 		s.log.Info("session: attach ended with error",
 			"error", err,
 			"workspace", id.WorkspaceID(),

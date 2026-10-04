@@ -1,6 +1,6 @@
 # ADR 001: Workspace Identity Model and Kubernetes Object Naming
 
-**Status:** Accepted  
+**Status:** Accepted; workspace-selector semantics superseded by ADR 003.
 **Date:** 2026-05-23
 
 ---
