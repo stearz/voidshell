@@ -19,15 +19,15 @@ type Authenticator interface {
 	Authenticate(ctx context.Context, key ssh.PublicKey, sshUser string) (string, error)
 }
 
-// WorkspaceLifecycle creates and cleans up workspace pods and PVCs.
+// WorkspaceLifecycle creates and cleans up workspace pods and their optional PVCs.
 type WorkspaceLifecycle interface {
-	EnsureWorkspace(ctx context.Context, id workspace.Identity) error
-	DeletePod(ctx context.Context, id workspace.Identity) error
+	EnsureWorkspace(ctx context.Context, id workspace.Identity, mode workspace.StorageMode) error
+	DeletePod(ctx context.Context, id workspace.Identity, mode workspace.StorageMode) error
 }
 
 // PodAttacher attaches stdin/stdout/stderr to a running workspace pod.
 type PodAttacher interface {
-	Attach(ctx context.Context, id workspace.Identity, tty bool, resizeQueue remotecommand.TerminalSizeQueue, stdin io.Reader, stdout, stderr io.Writer) error
+	Attach(ctx context.Context, id workspace.Identity, mode workspace.StorageMode, tty bool, resizeQueue remotecommand.TerminalSizeQueue, stdin io.Reader, stdout, stderr io.Writer) error
 }
 
 // Server is the voidshell SSH server.
@@ -114,7 +114,14 @@ func (s *Server) handleConn(ctx context.Context, conn net.Conn) {
 		"remote", sshConn.RemoteAddr(),
 	)
 
-	id := workspace.New(ghUser, sshUser)
+	selector := workspace.ParseSelector(sshUser)
+	id := workspace.New(ghUser, selector.Name)
+	s.log.Info("ssh: workspace selected",
+		"github_user", ghUser,
+		"ssh_user", sshUser,
+		"workspace", selector.Name,
+		"storage_mode", selector.Mode,
+	)
 	go ssh.DiscardRequests(reqs)
 
 	for newChan := range chans {
@@ -122,6 +129,6 @@ func (s *Server) handleConn(ctx context.Context, conn net.Conn) {
 			newChan.Reject(ssh.UnknownChannelType, "only session channels are supported")
 			continue
 		}
-		go s.handleSession(ctx, newChan, id)
+		go s.handleSession(ctx, newChan, id, selector.Mode)
 	}
 }

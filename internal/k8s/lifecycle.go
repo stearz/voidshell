@@ -1,4 +1,4 @@
-// Package k8s manages the Kubernetes lifecycle of voidshell workspace PVCs and pods.
+// Package k8s manages the Kubernetes lifecycle of voidshell workspace pods and optional PVCs.
 //
 // Required RBAC for the voidshell ServiceAccount (scoped to the guest namespace):
 //
@@ -94,13 +94,15 @@ func NewFromKubeconfig(kubeconfigPath string, cfg Config) (*Manager, error) {
 	return &Manager{client: client, cfg: cfg, restCfg: restCfg}, nil
 }
 
-// EnsureWorkspace creates or reuses the PVC and pod for the given workspace
-// identity, then waits for the pod to reach Running phase.
-func (m *Manager) EnsureWorkspace(ctx context.Context, id workspace.Identity) error {
-	if err := m.ensurePVC(ctx, id); err != nil {
-		return fmt.Errorf("ensuring PVC: %w", err)
+// EnsureWorkspace creates a workspace pod and, for persistent workspaces, a PVC,
+// then waits for the pod to reach Running phase.
+func (m *Manager) EnsureWorkspace(ctx context.Context, id workspace.Identity, mode workspace.StorageMode) error {
+	if mode == workspace.StoragePersistent {
+		if err := m.ensurePVC(ctx, id); err != nil {
+			return fmt.Errorf("ensuring PVC: %w", err)
+		}
 	}
-	if err := m.ensurePod(ctx, id); err != nil {
+	if err := m.ensurePod(ctx, id, mode); err != nil {
 		return fmt.Errorf("ensuring pod: %w", err)
 	}
 	timeout := m.cfg.PodReadyTimeout
@@ -109,16 +111,17 @@ func (m *Manager) EnsureWorkspace(ctx context.Context, id workspace.Identity) er
 	}
 	waitCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
-	if err := m.waitForPodReady(waitCtx, id); err != nil {
+	if err := m.waitForPodReady(waitCtx, id, mode); err != nil {
 		return fmt.Errorf("waiting for pod ready: %w", err)
 	}
 	return nil
 }
 
-// DeletePod deletes the workspace pod, leaving the PVC intact for the next
-// reconnect. It is idempotent: a missing pod is not an error.
-func (m *Manager) DeletePod(ctx context.Context, id workspace.Identity) error {
-	err := m.client.CoreV1().Pods(m.cfg.Namespace).Delete(ctx, id.PodName(), metav1.DeleteOptions{})
+// DeletePod deletes the workspace pod for the requested storage mode, leaving a
+// persistent-mode PVC intact for the next reconnect. It is idempotent: a missing
+// pod is not an error.
+func (m *Manager) DeletePod(ctx context.Context, id workspace.Identity, mode workspace.StorageMode) error {
+	err := m.client.CoreV1().Pods(m.cfg.Namespace).Delete(ctx, id.PodNameFor(mode), metav1.DeleteOptions{})
 	if errors.IsNotFound(err) {
 		return nil
 	}
@@ -156,32 +159,32 @@ func (m *Manager) ensurePVC(ctx context.Context, id workspace.Identity) error {
 	return err
 }
 
-func (m *Manager) ensurePod(ctx context.Context, id workspace.Identity) error {
+func (m *Manager) ensurePod(ctx context.Context, id workspace.Identity, mode workspace.StorageMode) error {
 	_, err := m.client.CoreV1().Pods(m.cfg.Namespace).
-		Get(ctx, id.PodName(), metav1.GetOptions{})
+		Get(ctx, id.PodNameFor(mode), metav1.GetOptions{})
 	if err == nil {
 		return nil
 	}
 	if !errors.IsNotFound(err) {
-		return fmt.Errorf("getting pod %q: %w", id.PodName(), err)
+		return fmt.Errorf("getting pod %q: %w", id.PodNameFor(mode), err)
 	}
 	_, err = m.client.CoreV1().Pods(m.cfg.Namespace).
-		Create(ctx, buildPod(id, m.cfg), metav1.CreateOptions{})
+		Create(ctx, buildPod(id, mode, m.cfg), metav1.CreateOptions{})
 	return err
 }
 
-func (m *Manager) waitForPodReady(ctx context.Context, id workspace.Identity) error {
+func (m *Manager) waitForPodReady(ctx context.Context, id workspace.Identity, mode workspace.StorageMode) error {
 	check := func() (bool, error) {
 		pod, err := m.client.CoreV1().Pods(m.cfg.Namespace).
-			Get(ctx, id.PodName(), metav1.GetOptions{})
+			Get(ctx, id.PodNameFor(mode), metav1.GetOptions{})
 		if err != nil {
-			return false, fmt.Errorf("getting pod %q: %w", id.PodName(), err)
+			return false, fmt.Errorf("getting pod %q: %w", id.PodNameFor(mode), err)
 		}
 		switch pod.Status.Phase {
 		case corev1.PodRunning:
 			return true, nil
 		case corev1.PodFailed, corev1.PodSucceeded:
-			return false, fmt.Errorf("pod %q reached terminal phase %s", id.PodName(), pod.Status.Phase)
+			return false, fmt.Errorf("pod %q reached terminal phase %s", id.PodNameFor(mode), pod.Status.Phase)
 		}
 		return false, nil
 	}
@@ -200,7 +203,7 @@ func (m *Manager) waitForPodReady(ctx context.Context, id workspace.Identity) er
 	for {
 		select {
 		case <-ctx.Done():
-			return fmt.Errorf("pod %q not ready within timeout: %w", id.PodName(), ctx.Err())
+			return fmt.Errorf("pod %q not ready within timeout: %w", id.PodNameFor(mode), ctx.Err())
 		case <-ticker.C:
 			if done, err := check(); err != nil || done {
 				return err
@@ -209,13 +212,13 @@ func (m *Manager) waitForPodReady(ctx context.Context, id workspace.Identity) er
 	}
 }
 
-func buildPod(id workspace.Identity, cfg Config) *corev1.Pod {
+func buildPod(id workspace.Identity, mode workspace.StorageMode, cfg Config) *corev1.Pod {
 	uid := int64(1000)
 	nonRoot := true
 	noEscalation := false
 	return &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      id.PodName(),
+			Name:      id.PodNameFor(mode),
 			Namespace: cfg.Namespace,
 			Labels:    map[string]string{workspaceLabel: id.WorkspaceID()},
 		},
@@ -246,13 +249,18 @@ func buildPod(id workspace.Identity, cfg Config) *corev1.Pod {
 				}},
 			}},
 			Volumes: []corev1.Volume{{
-				Name: "home",
-				VolumeSource: corev1.VolumeSource{
-					PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
-						ClaimName: id.PVCName(),
-					},
-				},
+				Name:         "home",
+				VolumeSource: workspaceVolumeSource(id, mode),
 			}},
 		},
 	}
+}
+
+func workspaceVolumeSource(id workspace.Identity, mode workspace.StorageMode) corev1.VolumeSource {
+	if mode == workspace.StoragePersistent {
+		return corev1.VolumeSource{
+			PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{ClaimName: id.PVCName()},
+		}
+	}
+	return corev1.VolumeSource{EmptyDir: &corev1.EmptyDirVolumeSource{}}
 }

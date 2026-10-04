@@ -33,9 +33,21 @@ func (id Identity) WorkspaceID() string {
 	return fmt.Sprintf("vs-%s-%s-%s", gh, ssh, hash)
 }
 
-// PodName returns the Kubernetes pod name for this workspace.
+// PodName returns the Kubernetes pod name for a persistent workspace. It is kept
+// for compatibility with the original stable workspace naming contract.
 func (id Identity) PodName() string {
-	return "shell-" + id.WorkspaceID()
+	return id.PodNameFor(StoragePersistent)
+}
+
+// PodNameFor returns the Kubernetes pod name for the requested storage mode.
+// Ephemeral and persistent sessions for the same logical workspace must not
+// reuse a pod because they require different volume sources.
+func (id Identity) PodNameFor(mode StorageMode) string {
+	name := "shell-" + id.WorkspaceID()
+	if mode == StorageEphemeral {
+		return name + "-ephemeral"
+	}
+	return name
 }
 
 // PVCName returns the Kubernetes PVC name for this workspace.

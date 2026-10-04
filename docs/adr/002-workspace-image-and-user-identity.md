@@ -42,13 +42,14 @@ The image:
 
 ### Env-var bridge: `VOIDSHELL_USER`
 
-voidshell injects `VOIDSHELL_USER=<ssh_username>` into the pod container spec at
-creation time. This is the only change to the server side — no new config field,
-no API surface.
+voidshell injects `VOIDSHELL_USER=<workspace_name>` into the pod container spec at
+creation time. The workspace name is derived from the SSH selector after a
+possible `persist.` prefix is removed; no new config field or API surface is
+needed.
 
-`ssh_username` (the text before `@` in the SSH command) was already captured in
-`workspace.Identity.SSHUser`; the env var is simply the transport that carries it
-from the Go process into the container's runtime environment.
+The logical workspace name is carried in `workspace.Identity.SSHUser`; the env
+var is simply the transport that carries it from the Go process into the
+container's runtime environment.
 
 ### Workspace user (`voidshell`, UID 1000)
 
@@ -65,10 +66,11 @@ during its lifecycle.
 ### Prompt identity (`/etc/profile.d/voidshell-prompt.sh`)
 
 Alongside `VOIDSHELL_USER`, voidshell also injects `USER` and `LOGNAME` set to
-the SSH username. A `/etc/profile.d/voidshell-prompt.sh` script sets `PS1` to
-`${VOIDSHELL_USER}@\h:\w\$`, so the connecting user sees their SSH username in
-the prompt. `whoami` still returns `voidshell` (it resolves UID 1000 from
-`/etc/passwd`), but `$USER` and `$LOGNAME` return the SSH username.
+the logical workspace name. A `/etc/profile.d/voidshell-prompt.sh` script sets
+`PS1` to `${VOIDSHELL_USER}@\h:\w\$`, so the connecting user sees their selected
+workspace name in the prompt. `whoami` still returns `voidshell` (it resolves
+UID 1000 from `/etc/passwd`), but `$USER` and `$LOGNAME` return that workspace
+name.
 
 Homebrew is wired into all login shells via `/etc/profile.d/homebrew.sh`, which
 is baked into the image at build time.
@@ -76,9 +78,8 @@ is baked into the image at build time.
 ### UID strategy
 
 All workspace users share UID 1000 inside the container. The username is a
-display name; the UID determines file ownership. Because each workspace pod uses
-a dedicated PVC, there is no cross-user collision risk — the UID is always "this
-user" within their own PVC.
+display name; the UID determines file ownership. Persistent workspaces use a
+dedicated PVC, while ephemeral workspaces receive a fresh `emptyDir` per pod.
 
 ## Consequences
 
@@ -88,10 +89,9 @@ user" within their own PVC.
 - `shellCommand` in the config must be left unset (or empty) when using the
   workspace image, because setting it overrides the `CMD` and bypasses the
   default login shell invocation.
-- Files created by the session user inside `/home/<username>` (the container
-  layer, not the PVC) are lost when the pod is deleted. Only `/home/workspace`
-  (the PVC mount) persists across sessions. Users should be made aware that
-  dotfiles in `~` are ephemeral unless they symlink them into the PVC.
+- `/home/workspace` is an `emptyDir` for ordinary selectors and a PVC mount only
+for `persist.<workspace>`. Files in both the container layer and an ordinary
+workspace disappear when its pod is deleted.
 - Homebrew packages installed via `brew install` are also in the container layer
   and therefore ephemeral. This is acceptable for the homelab use-case; users who
   need persistent packages should bake them into a derived image.

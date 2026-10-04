@@ -74,9 +74,9 @@ The SSH host key secret is mounted as a file — no `secrets/get` API permission
 | `ssh.hostKeySecret` | `voidshell-host-key` | Name of K8s Secret containing the SSH host key |
 | `auth.allowedGitHubUsers` | `[]` | GitHub usernames permitted to connect |
 | `auth.keyCacheTTL` | `5m` | How long GitHub key lists are cached |
-| `kubernetes.guestNamespace` | `voidshell-guest` | Namespace for workspace pods and PVCs |
-| `kubernetes.storageClass` | `longhorn` | Storage class for workspace PVCs |
-| `kubernetes.storageSize` | `5Gi` | PVC size per workspace |
+| `kubernetes.guestNamespace` | `voidshell-guest` | Namespace for workspace pods and persistent-mode PVCs |
+| `kubernetes.storageClass` | `longhorn` | Storage class used by `persist.<workspace>` PVCs |
+| `kubernetes.storageSize` | `5Gi` | PVC size for `persist.<workspace>` workspaces |
 | `workspace.shellImage` | `ubuntu:22.04` | Image used for workspace pods |
 | `workspace.shellCommand` | `[/bin/bash]` | Entrypoint inside workspace pods |
 | `service.type` | `ClusterIP` | Service type |

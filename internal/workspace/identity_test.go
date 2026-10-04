@@ -31,6 +31,16 @@ func TestObjectNames(t *testing.T) {
 	}
 }
 
+func TestPodNameForStorageModeSeparatesEphemeralAndPersistentSessions(t *testing.T) {
+	id := New("alice", "project")
+	if id.PodNameFor(StorageEphemeral) == id.PodNameFor(StoragePersistent) {
+		t.Errorf("storage modes share pod name %q", id.PodNameFor(StorageEphemeral))
+	}
+	if got, want := id.PodNameFor(StoragePersistent), id.PodName(); got != want {
+		t.Errorf("persistent pod name = %q, want legacy name %q", got, want)
+	}
+}
+
 func TestIsolation(t *testing.T) {
 	cases := []struct {
 		name string
