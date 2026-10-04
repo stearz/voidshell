@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.6.0](https://github.com/stearz/voidshell/compare/v0.5.0...v0.6.0) (2026-10-04)
+
+
+### Features
+
+* make workspaces ephemeral by default ([a85a50e](https://github.com/stearz/voidshell/commit/a85a50e636731140f42e427b00e9f48b7ff2d1a0))
+
+
+### Bug Fixes
+
+* refresh Ubuntu security packages in workspace image ([24ffab3](https://github.com/stearz/voidshell/commit/24ffab32bf030db8d67ea20ca8660a346db01143))
+* use cluster default storage class when unset ([af7b869](https://github.com/stearz/voidshell/commit/af7b869e5342bbe71d56bd7482efd5a2c022672e))
+
 ## [0.5.0](https://github.com/stearz/voidshell/compare/v0.4.0...v0.5.0) (2026-05-31)
 
 
