@@ -232,9 +232,13 @@ ssh -p 2222 devbox@<voidshell-service-ip>
 
 ### 2. Test: persistent selector retains a PVC
 
+Use two interactive sessions for the persistent smoke test:
+
 ```bash
-ssh -p 2222 persist.devbox@<voidshell-service-ip> 'echo hello > /home/workspace/test.txt'
-ssh -p 2222 persist.devbox@<voidshell-service-ip> 'cat /home/workspace/test.txt'
+ssh -p 2222 persist.devbox@<voidshell-service-ip>
+# Inside the shell: echo hello > /home/workspace/test.txt ; exit
+ssh -p 2222 persist.devbox@<voidshell-service-ip>
+# Inside the shell: cat /home/workspace/test.txt ; exit
 # Expected: hello
 ```
 

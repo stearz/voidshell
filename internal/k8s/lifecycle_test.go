@@ -160,6 +160,25 @@ func TestEnsurePVC(t *testing.T) {
 	}
 }
 
+func TestEnsurePVC_UsesDefaultStorageClassWhenUnset(t *testing.T) {
+	client := fake.NewSimpleClientset()
+	cfg := testConfig()
+	cfg.StorageClass = ""
+	mgr := New(client, cfg)
+	id := workspace.New("alice", "dev")
+
+	if err := mgr.ensurePVC(context.Background(), id); err != nil {
+		t.Fatalf("ensurePVC: %v", err)
+	}
+	pvc, err := client.CoreV1().PersistentVolumeClaims("test-ns").Get(context.Background(), id.PVCName(), metav1.GetOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pvc.Spec.StorageClassName != nil {
+		t.Errorf("StorageClassName = %q, want nil", *pvc.Spec.StorageClassName)
+	}
+}
+
 // TestEnsurePVC_Idempotent verifies that calling ensurePVC twice does not error
 // and does not create a duplicate PVC.
 func TestEnsurePVC_Idempotent(t *testing.T) {
