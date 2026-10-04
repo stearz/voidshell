@@ -86,7 +86,7 @@ func defaults() Config {
 		},
 		Kubernetes: KubernetesConfig{
 			GuestNamespace: "voidshell-workspaces",
-			StorageClass:   "standard",
+			StorageClass:   "",
 			StorageSize:    "5Gi",
 		},
 		Workspace: WorkspaceConfig{

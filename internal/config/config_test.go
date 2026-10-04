@@ -20,6 +20,9 @@ func TestLoadDefaults(t *testing.T) {
 	if cfg.Kubernetes.GuestNamespace != "voidshell-workspaces" {
 		t.Errorf("default guest namespace: got %q, want %q", cfg.Kubernetes.GuestNamespace, "voidshell-workspaces")
 	}
+	if cfg.Kubernetes.StorageClass != "" {
+		t.Errorf("default storage class: got %q, want empty to use cluster default", cfg.Kubernetes.StorageClass)
+	}
 	if cfg.Kubernetes.StorageSize != "5Gi" {
 		t.Errorf("default storage size: got %q, want %q", cfg.Kubernetes.StorageSize, "5Gi")
 	}

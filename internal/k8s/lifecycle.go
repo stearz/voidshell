@@ -145,14 +145,16 @@ func (m *Manager) ensurePVC(ctx context.Context, id workspace.Identity) error {
 			Labels:    map[string]string{workspaceLabel: id.WorkspaceID()},
 		},
 		Spec: corev1.PersistentVolumeClaimSpec{
-			StorageClassName: &sc,
-			AccessModes:      []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce},
+			AccessModes: []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce},
 			Resources: corev1.VolumeResourceRequirements{
 				Requests: corev1.ResourceList{
 					corev1.ResourceStorage: resource.MustParse(m.cfg.StorageSize),
 				},
 			},
 		},
+	}
+	if sc != "" {
+		pvc.Spec.StorageClassName = &sc
 	}
 	_, err = m.client.CoreV1().PersistentVolumeClaims(m.cfg.Namespace).
 		Create(ctx, pvc, metav1.CreateOptions{})

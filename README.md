@@ -11,8 +11,10 @@ them by default. The workspace identity is the tuple `(github_username,
 workspace_name)`, which allows one GitHub account to maintain multiple
 independent workspaces.
 
-Inside the workspace pod you run as the logical workspace name you selected — not
-as `root` or a generic user. See [Workspace image](#workspace-image) below and
+Inside the workspace pod the process runs as the pre-baked non-root Linux user
+`voidshell` (UID 1000). The logical workspace name controls `VOIDSHELL_USER`,
+`USER`, `LOGNAME`, and the shell prompt; it does not change `whoami` or file
+ownership. See [Workspace image](#workspace-image) below and
 [docs/adr/001-identity-and-naming.md](docs/adr/001-identity-and-naming.md) for
 the Kubernetes object naming rules.
 

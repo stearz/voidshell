@@ -48,9 +48,9 @@ kubernetes:
   # Pre-existing namespace where workspace pods and PVCs are created.
   # Must exist before deploying voidshell.
   guestNamespace: "voidshell-guest"
-  # PVC storage class for persistent workspace volumes (e.g. "longhorn").
-  # Ordinary workspaces use emptyDir and do not create a PVC.
-  storageClass: "longhorn"
+  # PVC storage class for persistent workspace volumes. Leave empty to use the
+  # cluster default; ordinary workspaces use emptyDir and do not create a PVC.
+  storageClass: ""
   # Requested PVC capacity per persistent workspace.
   storageSize: "5Gi"
 
