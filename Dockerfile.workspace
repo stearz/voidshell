@@ -3,8 +3,9 @@ FROM ubuntu:26.04
 ENV DEBIAN_FRONTEND=noninteractive
 
 # The Ubuntu base includes Pebble for image-building use. The workspace starts
-# Bash directly and does not need an init/service manager.
-RUN apt-get update && apt-get install -y \
+# Bash directly and does not need an init/service manager. Upgrade first so the
+# image does not retain fixed security packages from the mutable Ubuntu base.
+RUN apt-get update && apt-get upgrade -y && apt-get install -y \
     build-essential \
     curl \
     file \
