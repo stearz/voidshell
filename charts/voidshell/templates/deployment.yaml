@@ -1,3 +1,6 @@
+{{- if ne (int .Values.replicaCount) 1 }}
+{{- fail "voidshell requires replicaCount: 1; workspace lifecycle coordination is process-local" }}
+{{- end }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -7,6 +10,9 @@ metadata:
     {{- include "voidshell.labels" . | nindent 4 }}
 spec:
   replicas: {{ .Values.replicaCount }}
+  # Avoid two independent lifecycle coordinators during an upgrade.
+  strategy:
+    type: Recreate
   selector:
     matchLabels:
       {{- include "voidshell.selectorLabels" . | nindent 6 }}
@@ -15,6 +21,7 @@ spec:
       labels:
         {{- include "voidshell.selectorLabels" . | nindent 8 }}
     spec:
+      terminationGracePeriodSeconds: 45
       serviceAccountName: {{ include "voidshell.serviceAccountName" . }}
       {{- with .Values.imagePullSecrets }}
       imagePullSecrets:

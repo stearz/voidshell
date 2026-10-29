@@ -36,3 +36,4 @@ workspace:
   image: ghcr.io/stearz/voidshell-workspace:main
   shellCommand:
     - /bin/bash
+    - -l

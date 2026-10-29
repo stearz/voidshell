@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"time"
+	"strings"
 
 	"golang.org/x/crypto/ssh"
 	"k8s.io/client-go/tools/remotecommand"
@@ -64,60 +64,76 @@ func (q *terminalSizeQueue) stop() {
 func (s *Server) handleSession(ctx context.Context, newChan ssh.NewChannel, id workspace.Identity, mode workspace.StorageMode) {
 	ch, reqs, err := newChan.Accept()
 	if err != nil {
-		s.log.Error("session: channel accept failed", "error", err)
 		return
 	}
 	defer ch.Close()
-
-	var (
-		ptyRequested bool
-		initCols     uint32 = 80
-		initRows     uint32 = 24
-	)
-	sizeQueue := newTerminalSizeQueue()
-
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	var tty bool
+	var term string
+	cols, rows := uint32(80), uint32(24)
+	sizes := newTerminalSizeQueue()
+	defer sizes.stop()
 	for req := range reqs {
 		switch req.Type {
 		case "pty-req":
 			var msg ptyRequestMsg
-			if err := ssh.Unmarshal(req.Payload, &msg); err == nil && msg.Columns > 0 {
-				initCols = msg.Columns
-				initRows = msg.Rows
+			if tty || ssh.Unmarshal(req.Payload, &msg) != nil || strings.ContainsRune(msg.Term, 0) {
+				req.Reply(false, nil)
+				continue
 			}
-			ptyRequested = true
+			tty, term = true, msg.Term
+			if msg.Columns > 0 && msg.Rows > 0 {
+				cols, rows = msg.Columns, msg.Rows
+			}
 			req.Reply(true, nil)
-
-		case "shell":
+		case "shell", "exec", "subsystem":
+			var command []string
+			valid := true
+			switch req.Type {
+			case "shell":
+				valid = len(req.Payload) == 0
+			case "exec":
+				var msg struct{ Command string }
+				valid = ssh.Unmarshal(req.Payload, &msg) == nil && !strings.ContainsRune(msg.Command, 0)
+				command = []string{"/bin/sh", "-c", msg.Command}
+			case "subsystem":
+				var msg struct{ Name string }
+				valid = ssh.Unmarshal(req.Payload, &msg) == nil && msg.Name == "sftp" && !tty
+				// exec replaces the wrapper: stdout must contain only SFTP protocol data.
+				command = []string{"/bin/sh", "-c", `for p in /usr/lib/openssh/sftp-server /usr/libexec/openssh/sftp-server /usr/libexec/sftp-server; do if [ -x "$p" ]; then exec "$p"; fi; done; echo 'voidshell: sftp-server not installed' >&2; exit 127`}
+			}
+			if !valid {
+				req.Reply(false, nil)
+				continue
+			}
 			req.Reply(true, nil)
-			sizeQueue.push(initCols, initRows)
-			go drainRequests(reqs, sizeQueue)
-			s.runShellSession(ctx, ch, id, mode, ptyRequested, sizeQueue)
+			sizes.push(cols, rows)
+			// Join the request consumer before closing the resize queue.
+			drained := make(chan struct{})
+			go func() {
+				defer close(drained)
+				defer cancel()
+				drainRequests(reqs, sizes)
+			}()
+			s.runSession(ctx, ch, id, mode, command, tty, term, sizes)
+			ch.Close()
+			<-drained
 			return
-
-		case "exec":
-			req.Reply(false, nil)
-			sizeQueue.stop()
-			return
-
 		default:
 			if req.WantReply {
 				req.Reply(false, nil)
 			}
 		}
 	}
-	// reqs closed without receiving a shell request
-	sizeQueue.stop()
 }
 
-// drainRequests consumes the SSH request channel, forwarding window-change
-// events to sizeQueue, until the channel is closed.
-func drainRequests(reqs <-chan *ssh.Request, sizeQueue *terminalSizeQueue) {
-	defer sizeQueue.stop()
+func drainRequests(reqs <-chan *ssh.Request, sizes *terminalSizeQueue) {
 	for req := range reqs {
 		if req.Type == "window-change" {
 			var msg windowChangeMsg
-			if err := ssh.Unmarshal(req.Payload, &msg); err == nil {
-				sizeQueue.push(msg.Columns, msg.Rows)
+			if ssh.Unmarshal(req.Payload, &msg) == nil {
+				sizes.push(msg.Columns, msg.Rows)
 			}
 		}
 		if req.WantReply {
@@ -126,45 +142,34 @@ func drainRequests(reqs <-chan *ssh.Request, sizeQueue *terminalSizeQueue) {
 	}
 }
 
-func (s *Server) runShellSession(ctx context.Context, ch ssh.Channel, id workspace.Identity, mode workspace.StorageMode, tty bool, sizeQueue *terminalSizeQueue) {
-	if err := s.lifecycle.EnsureWorkspace(ctx, id, mode); err != nil {
-		s.log.Error("session: workspace setup failed",
-			"error", err,
-			"workspace", id.WorkspaceID(),
-			"github_user", id.GithubUser,
-			"ssh_user", id.SSHUser,
-		)
+func (s *Server) runSession(ctx context.Context, ch ssh.Channel, id workspace.Identity, mode workspace.StorageMode, command []string, tty bool, term string, sizes *terminalSizeQueue) {
+	code := uint32(1)
+	// Cleanup finishes before exit-status is sent, so an immediate reconnect
+	// cannot race a pod that is still being deleted.
+	defer func() { sendExitStatus(ch, code) }()
+	release, err := s.acquireWorkspace(ctx, id, mode)
+	if err != nil {
 		fmt.Fprintf(ch.Stderr(), "voidshell: workspace setup failed: %v\n", err)
-		sendExitStatus(ch, 1)
 		return
 	}
-
-	defer func() {
-		cleanupCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-		defer cancel()
-		if err := s.lifecycle.DeletePod(cleanupCtx, id, mode); err != nil {
-			s.log.Error("session: pod cleanup failed",
-				"error", err,
-				"workspace", id.WorkspaceID(),
-			)
-		}
-	}()
-
-	// When using a PTY the container runtime multiplexes stderr into stdout.
+	defer release()
 	var stderr io.Writer
 	if !tty {
 		stderr = ch.Stderr()
 	}
-
-	if err := s.attacher.Attach(ctx, id, mode, tty, sizeQueue, ch, ch, stderr); err != nil {
-		s.log.Info("session: attach ended with error",
-			"error", err,
-			"workspace", id.WorkspaceID(),
-		)
-		sendExitStatus(ch, 1)
-		return
+	if command == nil {
+		code, err = s.attacher.Attach(ctx, id, mode, term, tty, sizes, ch, ch, stderr)
+	} else {
+		if tty {
+			command = append([]string{"env", "TERM=" + term}, command...)
+		}
+		code, err = s.attacher.Exec(ctx, id, mode, command, tty, sizes, ch, ch, stderr)
 	}
-	sendExitStatus(ch, 0)
+	if err != nil {
+		code = 1
+		s.log.Error("session: execution failed", "workspace", id.WorkspaceID(), "error", err)
+		fmt.Fprintf(ch.Stderr(), "voidshell: execution failed: %v\n", err)
+	}
 }
 
 func sendExitStatus(ch ssh.Channel, code uint32) {

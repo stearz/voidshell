@@ -32,6 +32,9 @@ func setPodPhase(t *testing.T, client *fake.Clientset, ns, name string, phase co
 		t.Fatalf("setPodPhase: get pod %q: %v", name, err)
 	}
 	pod.Status.Phase = phase
+	if phase == corev1.PodRunning {
+		pod.Status.ContainerStatuses = []corev1.ContainerStatus{{Name: "workspace", Ready: true}}
+	}
 	if _, err := client.CoreV1().Pods(ns).UpdateStatus(context.Background(), pod, metav1.UpdateOptions{}); err != nil {
 		t.Fatalf("setPodPhase: update pod %q: %v", name, err)
 	}
@@ -379,4 +382,44 @@ func TestIsolation(t *testing.T) {
 	if len(pods.Items) != len(identities) {
 		t.Errorf("expected %d pods, got %d", len(identities), len(pods.Items))
 	}
+}
+
+func TestRunningContainerMustBeReady(t *testing.T) {
+	client := fake.NewSimpleClientset()
+	mgr := New(client, testConfig())
+	id := workspace.New("alice", "dev")
+	if err := mgr.ensurePod(context.Background(), id, workspace.StorageEphemeral); err != nil {
+		t.Fatal(err)
+	}
+	pod, err := client.CoreV1().Pods("test-ns").Get(context.Background(), id.PodNameFor(workspace.StorageEphemeral), metav1.GetOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	pod.Status.Phase = corev1.PodRunning
+	pod.Status.ContainerStatuses = []corev1.ContainerStatus{{Name: "workspace", Ready: false}}
+	if _, err := client.CoreV1().Pods("test-ns").UpdateStatus(context.Background(), pod, metav1.UpdateOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Millisecond)
+	defer cancel()
+	if err := mgr.waitForPodReady(ctx, id, workspace.StorageEphemeral); err == nil {
+		t.Fatal("accepted a container that is not ready")
+	}
+}
+
+func TestPodSupportsIndependentNonRootProcesses(t *testing.T) {
+	pod := buildPod(workspace.New("alice", "dev"), workspace.StorageEphemeral, testConfig())
+	c := pod.Spec.Containers[0]
+	if c.TTY || c.Stdin {
+		t.Fatal("pod main process must not own an SSH terminal")
+	}
+	if c.WorkingDir != workspaceMountPath || pod.Spec.SecurityContext.FSGroup == nil || *pod.Spec.SecurityContext.FSGroup != 1000 {
+		t.Fatal("home must be writable and used as the working directory")
+	}
+	for _, env := range c.Env {
+		if env.Name == "HOME" && env.Value == workspaceMountPath {
+			return
+		}
+	}
+	t.Fatal("HOME must point at the workspace volume")
 }

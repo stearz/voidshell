@@ -11,6 +11,9 @@ RUN apt-get update && apt-get upgrade -y && apt-get install -y \
     file \
     git \
     procps \
+    openssh-client \
+    openssh-sftp-server \
+    rsync \
     && rm -rf /var/lib/apt/lists/* \
     && rm -f /usr/bin/pebble
 
@@ -55,6 +58,9 @@ RUN usermod -l voidshell ubuntu \
 # Wire Homebrew into all login shells.
 RUN echo 'eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"' \
     > /etc/profile.d/homebrew.sh
+
+# Make installed tools available to non-login exec and rsync sessions too.
+ENV PATH="/home/linuxbrew/.linuxbrew/bin:/home/linuxbrew/.linuxbrew/sbin:${PATH}"
 
 # Show the connecting SSH username in the shell prompt.
 COPY scripts/voidshell-prompt.sh /etc/profile.d/voidshell-prompt.sh

@@ -4,7 +4,8 @@
 //
 //	pods:                    get, list, create, delete
 //	pods/log:                get
-//	pods/attach:             create
+//	pods/exec:               create
+//	pods/portforward:        create
 //	persistentvolumeclaims:  get, create
 //
 // The guest namespace must pre-exist; voidshell does not create it.
@@ -43,9 +44,9 @@ type Config struct {
 	StorageSize string
 	// Image is the OCI image run in workspace pods.
 	Image string
-	// ShellCommand is the entrypoint executed inside the workspace container.
+	// ShellCommand is executed once per SSH shell session, independently of PID 1.
 	ShellCommand []string
-	// PodReadyTimeout is how long EnsureWorkspace waits for a pod to reach Running.
+	// PodReadyTimeout bounds workspace provisioning and container readiness.
 	// Defaults to 2 minutes when zero.
 	PodReadyTimeout time.Duration
 	// PodPollInterval controls how often pod status is checked while waiting.
@@ -95,8 +96,14 @@ func NewFromKubeconfig(kubeconfigPath string, cfg Config) (*Manager, error) {
 }
 
 // EnsureWorkspace creates a workspace pod and, for persistent workspaces, a PVC,
-// then waits for the pod to reach Running phase.
+// then waits for the workspace container to be ready.
 func (m *Manager) EnsureWorkspace(ctx context.Context, id workspace.Identity, mode workspace.StorageMode) error {
+	timeout := m.cfg.PodReadyTimeout
+	if timeout == 0 {
+		timeout = defaultReadyTimeout
+	}
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
 	if mode == workspace.StoragePersistent {
 		if err := m.ensurePVC(ctx, id); err != nil {
 			return fmt.Errorf("ensuring PVC: %w", err)
@@ -105,13 +112,7 @@ func (m *Manager) EnsureWorkspace(ctx context.Context, id workspace.Identity, mo
 	if err := m.ensurePod(ctx, id, mode); err != nil {
 		return fmt.Errorf("ensuring pod: %w", err)
 	}
-	timeout := m.cfg.PodReadyTimeout
-	if timeout == 0 {
-		timeout = defaultReadyTimeout
-	}
-	waitCtx, cancel := context.WithTimeout(ctx, timeout)
-	defer cancel()
-	if err := m.waitForPodReady(waitCtx, id, mode); err != nil {
+	if err := m.waitForPodReady(ctx, id, mode); err != nil {
 		return fmt.Errorf("waiting for pod ready: %w", err)
 	}
 	return nil
@@ -125,7 +126,26 @@ func (m *Manager) DeletePod(ctx context.Context, id workspace.Identity, mode wor
 	if errors.IsNotFound(err) {
 		return nil
 	}
-	return err
+	if err != nil {
+		return err
+	}
+	// Deletion is asynchronous. Do not let a reconnect reuse a terminating pod.
+	ticker := time.NewTicker(100 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		_, err := m.client.CoreV1().Pods(m.cfg.Namespace).Get(ctx, id.PodNameFor(mode), metav1.GetOptions{})
+		if errors.IsNotFound(err) {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-ticker.C:
+		}
+	}
 }
 
 func (m *Manager) ensurePVC(ctx context.Context, id workspace.Identity) error {
@@ -162,17 +182,30 @@ func (m *Manager) ensurePVC(ctx context.Context, id workspace.Identity) error {
 }
 
 func (m *Manager) ensurePod(ctx context.Context, id workspace.Identity, mode workspace.StorageMode) error {
-	_, err := m.client.CoreV1().Pods(m.cfg.Namespace).
-		Get(ctx, id.PodNameFor(mode), metav1.GetOptions{})
-	if err == nil {
-		return nil
+	for {
+		pod, err := m.client.CoreV1().Pods(m.cfg.Namespace).Get(ctx, id.PodNameFor(mode), metav1.GetOptions{})
+		if errors.IsNotFound(err) {
+			_, err = m.client.CoreV1().Pods(m.cfg.Namespace).Create(ctx, buildPod(id, mode, m.cfg), metav1.CreateOptions{})
+			if errors.IsAlreadyExists(err) {
+				continue
+			}
+			return err
+		}
+		if err != nil {
+			return fmt.Errorf("getting pod %q: %w", id.PodNameFor(mode), err)
+		}
+		if pod.DeletionTimestamp == nil {
+			return nil
+		}
+		// A previous cleanup may have timed out. Never execute in a dying pod.
+		timer := time.NewTimer(100 * time.Millisecond)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return ctx.Err()
+		case <-timer.C:
+		}
 	}
-	if !errors.IsNotFound(err) {
-		return fmt.Errorf("getting pod %q: %w", id.PodNameFor(mode), err)
-	}
-	_, err = m.client.CoreV1().Pods(m.cfg.Namespace).
-		Create(ctx, buildPod(id, mode, m.cfg), metav1.CreateOptions{})
-	return err
 }
 
 func (m *Manager) waitForPodReady(ctx context.Context, id workspace.Identity, mode workspace.StorageMode) error {
@@ -184,7 +217,11 @@ func (m *Manager) waitForPodReady(ctx context.Context, id workspace.Identity, mo
 		}
 		switch pod.Status.Phase {
 		case corev1.PodRunning:
-			return true, nil
+			for _, status := range pod.Status.ContainerStatuses {
+				if status.Name == "workspace" && status.Ready {
+					return true, nil
+				}
+			}
 		case corev1.PodFailed, corev1.PodSucceeded:
 			return false, fmt.Errorf("pod %q reached terminal phase %s", id.PodNameFor(mode), pod.Status.Phase)
 		}
@@ -216,6 +253,7 @@ func (m *Manager) waitForPodReady(ctx context.Context, id workspace.Identity, mo
 
 func buildPod(id workspace.Identity, mode workspace.StorageMode, cfg Config) *corev1.Pod {
 	uid := int64(1000)
+	grace := int64(1)
 	nonRoot := true
 	noEscalation := false
 	return &corev1.Pod{
@@ -225,12 +263,17 @@ func buildPod(id workspace.Identity, mode workspace.StorageMode, cfg Config) *co
 			Labels:    map[string]string{workspaceLabel: id.WorkspaceID()},
 		},
 		Spec: corev1.PodSpec{
-			RestartPolicy: corev1.RestartPolicyNever,
+			RestartPolicy:                 corev1.RestartPolicyNever,
+			TerminationGracePeriodSeconds: &grace,
+			SecurityContext:               &corev1.PodSecurityContext{FSGroup: &uid},
 			Containers: []corev1.Container{{
-				Name:    "workspace",
-				Image:   cfg.Image,
-				Command: cfg.ShellCommand,
+				Name:  "workspace",
+				Image: cfg.Image,
+				// Keep PID 1 independent of SSH sessions. Trap TERM for fast cleanup.
+				Command:    []string{"/bin/sh", "-c", "trap 'exit 0' TERM INT; while :; do sleep 3600 & wait $!; done"},
+				WorkingDir: workspaceMountPath,
 				Env: []corev1.EnvVar{
+					{Name: "HOME", Value: workspaceMountPath},
 					{Name: "VOIDSHELL_USER", Value: id.SSHUser},
 					{Name: "USER", Value: id.SSHUser},
 					{Name: "LOGNAME", Value: id.SSHUser},
@@ -243,8 +286,6 @@ func buildPod(id workspace.Identity, mode workspace.StorageMode, cfg Config) *co
 						Drop: []corev1.Capability{"ALL"},
 					},
 				},
-				Stdin: true,
-				TTY:   true,
 				VolumeMounts: []corev1.VolumeMount{{
 					Name:      "home",
 					MountPath: workspaceMountPath,

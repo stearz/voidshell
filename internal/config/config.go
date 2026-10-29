@@ -52,7 +52,7 @@ type KubernetesConfig struct {
 type WorkspaceConfig struct {
 	// Image is the OCI image used for the workspace pod.
 	Image string `yaml:"image"`
-	// ShellCommand is the entrypoint executed inside the workspace pod.
+	// ShellCommand starts an independent shell for each SSH shell request.
 	ShellCommand []string `yaml:"shellCommand"`
 }
 
@@ -91,7 +91,7 @@ func defaults() Config {
 		},
 		Workspace: WorkspaceConfig{
 			Image:        "ghcr.io/stearz/voidshell-workspace:main",
-			ShellCommand: []string{"/bin/bash"},
+			ShellCommand: []string{"/bin/bash", "-l"},
 		},
 	}
 }

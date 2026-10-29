@@ -14,7 +14,7 @@ SSH-to-Kubernetes workspace proxy with GitHub public key authentication.
   ```
   ssh-keygen -t ed25519 -f /tmp/voidshell_host_key -N ""
   kubectl create secret generic voidshell-host-key \
-    --from-file=ssh_host_ed25519_key=/tmp/voidshell_host_key \
+    --from-file=host-key=/tmp/voidshell_host_key \
     -n voidshell
   ```
 
@@ -32,8 +32,8 @@ kubernetes:
   storageSize: 5Gi
 
 workspace:
-  shellImage: ubuntu:22.04
-  shellCommand: [/bin/bash]
+  image: ghcr.io/stearz/voidshell-workspace:main
+  shellCommand: [/bin/bash, -l]
 
 service:
   type: LoadBalancer
@@ -58,7 +58,7 @@ The chart creates:
 
 | Resource | Namespace | Permissions |
 |---|---|---|
-| Role + RoleBinding | `kubernetes.guestNamespace` | pods (get/list/create/delete), pods/log (get), pods/attach (create), PVCs (get/create) |
+| Role + RoleBinding | `kubernetes.guestNamespace` | pods (get/list/create/delete), pods/log (get), pods/exec and pods/portforward (create), PVCs (get/create) |
 
 The voidshell ServiceAccount in `.Release.Namespace` is bound cross-namespace to the guest Role. It holds **no cluster-scoped permissions**.
 
@@ -77,11 +77,33 @@ The SSH host key secret is mounted as a file — no `secrets/get` API permission
 | `kubernetes.guestNamespace` | `voidshell-guest` | Namespace for workspace pods and persistent-mode PVCs |
 | `kubernetes.storageClass` | `""` | Optional class for `persist.<workspace>` PVCs; empty uses the cluster default |
 | `kubernetes.storageSize` | `5Gi` | PVC size for `persist.<workspace>` workspaces |
-| `workspace.shellImage` | `ubuntu:22.04` | Image used for workspace pods |
-| `workspace.shellCommand` | `[/bin/bash]` | Entrypoint inside workspace pods |
+| `workspace.image` | `ghcr.io/stearz/voidshell-workspace:main` | Image used for workspace pods |
+| `workspace.shellCommand` | `[/bin/bash, -l]` | Shell process started for each session |
 | `service.type` | `ClusterIP` | Service type |
 | `service.port` | `2222` | Service port |
-| `networkPolicy.enabled` | `false` | Create a NetworkPolicy restricting SSH ingress |
+| `networkPolicy.enabled` | `true` | Create the proxy ingress/egress NetworkPolicy |
 | `nodeSelector` | `{}` | Pod node selector (use `kubernetes.io/arch: arm64` for Raspberry Pi) |
 | `tolerations` | `[]` | Pod tolerations |
 | `affinity` | `{}` | Pod affinity rules |
+
+## Session lifecycle and upgrades
+
+Run one proxy instance per guest namespace. The chart rejects `replicaCount`
+other than 1 and uses `Recreate` upgrades because workspace leases are coordinated
+in memory. Upgrades interrupt active SSH connections. Graceful shutdown waits for
+workspace cleanup; abrupt crashes can leave orphaned pods.
+
+The proxy requires `pods/exec` and `pods/portforward` create permissions in the
+guest namespace. Forwarding goes through the Kubernetes API, so no direct
+proxy-to-workspace network exception is required. Continue to allow proxy egress
+to your API server via `networkPolicy.egressPrivateExceptions`.
+
+When upgrading from the old attach-based session model, inspect and remove idle
+workspace pods before reconnecting. PVCs remain intact. Build the updated
+workspace image for SFTP, legacy SCP, and rsync binaries. Custom image entrypoints
+are bypassed; images need `/bin/sh`, `sleep`, `env`, and the configured shell.
+
+The pod is deleted after its last active shell, command, SFTP, or forwarding
+channel closes. `HOME` and the working directory are `/home/workspace`, writable
+via pod `fsGroup: 1000`. Only `persist.<workspace>` home volumes survive deletion.
+See [ADR 004](../../docs/adr/004-independent-sessions-and-workspace-lifecycle.md).

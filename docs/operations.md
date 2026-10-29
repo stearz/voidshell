@@ -122,8 +122,8 @@ kubernetes:
   storageSize: 5Gi
 
 workspace:
-  shellImage: ghcr.io/stearz/voidshell-workspace:latest
-  # shellCommand: omit to use the image CMD (starts a login shell as voidshell/UID 1000)
+  image: ghcr.io/stearz/voidshell-workspace:latest
+  shellCommand: [/bin/bash, -l] # independent login shell per session
 
 ssh:
   port: 2222
@@ -160,22 +160,35 @@ helm upgrade --install voidshell oci://ghcr.io/stearz/charts/voidshell \
 
 ## Expected session lifecycle
 
-An ordinary session performs only pod creation with an `emptyDir` volume:
-
 ```text
-ssh devbox@voidshell → CREATE shell-...-ephemeral → attach → DELETE pod
+first active channel → CREATE pod → wait for container readiness → exec/forward
+additional channels  → independent processes/streams in the same pod
+last channel closes  → DELETE pod → wait for deletion
 ```
 
-A persistent session additionally creates or reuses the stable PVC:
+`devbox` uses `emptyDir` without a PVC; `persist.devbox` creates/reuses the stable
+PVC. These selectors use separate pods. Each shell is an independent exec
+process, with `HOME` and working directory `/home/workspace`. Only a persistent
+home survives deletion. Installed Homebrew packages are outside the home volume.
 
-```text
-ssh persist.devbox@voidshell → GET/CREATE home-vs-... → CREATE shell-vs-... → attach → DELETE pod
-```
+An idle SSH transport does not retain a pod. Forward-only connections provision
+on the first incoming forwarding channel and release on its completion. Keep a
+shell session open while using a development server. There is no idle TTL.
 
-Only the persistent-mode PVC remains after disconnect. Ordinary workspace data
-disappears with its pod.
+Run exactly one proxy instance per guest namespace. The Helm chart enforces a
+single replica with `Recreate` upgrades and allows 45 seconds for graceful
+shutdown. During an upgrade, active SSH connections close and pods are cleaned
+up. Abrupt crashes can leave orphaned pods; inspect and remove those manually.
+When migrating from the old attach-based model, inspect and remove idle workspace
+pods before reconnecting. Do not delete their PVCs.
 
----
+Custom images must provide `/bin/sh`, `sleep`, `env`, and the configured session
+shell; custom entrypoints are bypassed. The image's `sftp-server`, `scp`, and
+`rsync` binaries are required for those features. Rebuild the supplied image to
+include the new binaries. Volumes must support `fsGroup: 1000` ownership.
+
+See [ADR 004](adr/004-independent-sessions-and-workspace-lifecycle.md) for the
+complete lifetime, cancellation, and deployment contract.
 
 ## Security model and RBAC
 
@@ -185,7 +198,8 @@ disappears with its pod.
 |---|---|---|
 | `pods` | `guestNamespace` | get, list, create, delete |
 | `pods/log` | `guestNamespace` | get |
-| `pods/attach` | `guestNamespace` | create |
+| `pods/exec` | `guestNamespace` | create |
+| `pods/portforward` | `guestNamespace` | create |
 | `persistentvolumeclaims` | `guestNamespace` | get, create |
 
 ### What voidshell cannot do
@@ -284,6 +298,47 @@ ssh -p 2222 devbox@<voidshell-service-ip>
 # Expected: shell prompt reflows to new width (tput cols should update)
 ```
 
+### 6. Test: independent sessions share files
+
+Open two terminals to `persist.devbox`. Create a file in `/home/workspace` in
+one and read it in the other. Exit the first terminal. The second must continue
+working, with the same pod. Exit the second: the pod must disappear and its PVC
+must remain. Repeat with `devbox`; its files must disappear after both exit.
+
+### 7. Test: commands, exit codes, and transfers
+
+```bash
+ssh -p 2222 persist.devbox@<host> 'printf out; printf err >&2; exit 7'
+# Expect separate stdout/stderr and local SSH exit code 7.
+scp -P 2222 ./file.txt persist.devbox@<host>:/home/workspace/
+sftp -P 2222 persist.devbox@<host>
+rsync -av -e 'ssh -p 2222' ./src/ persist.devbox@<host>:/home/workspace/src/
+```
+
+Confirm uploaded files survive a persistent reconnect. SFTP stdout must have no
+shell prompt or banner. Also test `scp -O` for legacy SCP if you use it.
+
+### 8. Test: workspace-local development server
+
+```bash
+ssh -p 2222 -L 8080:localhost:3000 persist.devbox@<host>
+# Inside the workspace, start an HTTP server listening on 127.0.0.1:3000.
+# From your own machine, visit http://localhost:8080.
+```
+
+A loopback-only server must be reachable. Forwarding to an arbitrary cluster IP
+or hostname must be rejected. Close a transfer or forwarding connection while a
+shell remains active: the shell and pod must remain usable. Close the final
+channel: the pod must be deleted.
+
+### 9. Test: failed setup and disconnect
+
+Use an invalid workspace image in a test deployment. Connecting must fail and
+its partially created pod must be removed. Disconnect during pod startup and
+verify cleanup as well. Restore the image, reconnect, and confirm a fresh pod
+can start. Stop the proxy gracefully with active sessions and verify cleanup;
+test abrupt crash recovery separately, since orphan cleanup is manual.
+
 ---
 
 ## Cleanup and restore
@@ -326,8 +381,7 @@ The following are **not** currently supported:
 - Shared/multi-user workspace pods
 - Management UI or workspace listing API
 - Prometheus exporter or metrics
-- SFTP / SCP support
-- SSH port forwarding or tunnel support
+- Remote SSH forwarding (`-R`) and forwarding to arbitrary destinations
 - Automated GitOps deployment pipeline
 - Policy engine (time limits, storage quotas beyond PVC size)
 - Alternate identity providers (only GitHub public key auth)

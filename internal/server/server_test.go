@@ -63,11 +63,15 @@ type fakeAttacher struct {
 	err         error
 }
 
-func (f *fakeAttacher) Attach(_ context.Context, _ workspace.Identity, _ workspace.StorageMode, _ bool, _ remotecommand.TerminalSizeQueue, _ io.Reader, _, _ io.Writer) error {
+func (f *fakeAttacher) Attach(_ context.Context, _ workspace.Identity, _ workspace.StorageMode, _ string, _ bool, _ remotecommand.TerminalSizeQueue, _ io.Reader, _, _ io.Writer) (uint32, error) {
 	f.mu.Lock()
 	f.attachCalls++
 	f.mu.Unlock()
-	return f.err
+	return 0, f.err
+}
+
+func (f *fakeAttacher) Exec(_ context.Context, _ workspace.Identity, _ workspace.StorageMode, _ []string, _ bool, _ remotecommand.TerminalSizeQueue, _ io.Reader, _, _ io.Writer) (uint32, error) {
+	return 0, f.err
 }
 
 // --- helpers ---

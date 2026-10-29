@@ -1,6 +1,7 @@
 # Default values for voidshell.
 # See README.md for a minimal homelab example.
 
+# Must remain 1: workspace lifecycle coordination is process-local.
 replicaCount: 1
 
 image:
@@ -62,6 +63,7 @@ workspace:
   image: "ghcr.io/stearz/voidshell-workspace:main"
   shellCommand:
     - /bin/bash
+    - -l
 
 # Kubernetes Service for the SSH listener.
 service:

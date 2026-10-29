@@ -29,8 +29,8 @@ func TestLoadDefaults(t *testing.T) {
 	if cfg.Workspace.Image != "ghcr.io/stearz/voidshell-workspace:main" {
 		t.Errorf("default workspace image: got %q, want %q", cfg.Workspace.Image, "ghcr.io/stearz/voidshell-workspace:main")
 	}
-	if len(cfg.Workspace.ShellCommand) != 1 || cfg.Workspace.ShellCommand[0] != "/bin/bash" {
-		t.Errorf("default shell command: got %v, want [/bin/bash]", cfg.Workspace.ShellCommand)
+	if len(cfg.Workspace.ShellCommand) != 2 || cfg.Workspace.ShellCommand[0] != "/bin/bash" || cfg.Workspace.ShellCommand[1] != "-l" {
+		t.Errorf("default shell command: got %v, want [/bin/bash -l]", cfg.Workspace.ShellCommand)
 	}
 }
 

@@ -236,4 +236,19 @@ handshake and no auth or pod work is performed.
 
 ---
 
+## SEC-011 — Workspace-scoped forwarding and lifecycle ownership
+
+**Status:** Implemented
+
+Local forwarding accepts only loopback destination names and uses Kubernetes
+`pods/portforward` against the authenticated user's selected workspace pod.
+The proxy does not resolve client destinations or dial arbitrary cluster hosts.
+Remote forwarding remains unsupported. Existing workspace network access policy
+is unchanged; this is a forwarding boundary, not a workspace egress policy.
+
+Shells, commands, and SFTP use independent `pods/exec` processes, coordinated by
+process-local workspace leases. The Helm chart enforces one replica and `Recreate`
+upgrades. See [ADR 004](adr/004-independent-sessions-and-workspace-lifecycle.md)
+for ownership, cleanup, cancellation limits, and crash recovery limitations.
+
 <!-- Next issues to be added here as the review progresses -->

@@ -1,6 +1,7 @@
 # ADR 002: Workspace Image and In-Container User Identity
 
-**Status:** Accepted  
+**Status:** Accepted; session startup superseded by [ADR 004](004-independent-sessions-and-workspace-lifecycle.md)
+
 **Date:** 2026-05-27
 
 ---
@@ -25,8 +26,8 @@ Two problems to solve:
 ### Workspace image (`Dockerfile.workspace`)
 
 A purpose-built workspace image is provided alongside the voidshell server image.
-It is not built automatically by the release workflow (which builds the server
-binary image); operators build and push it separately.
+CI builds and publishes it alongside the server image. Local Docker build
+instructions remain available for custom images.
 
 The image:
 
@@ -55,7 +56,8 @@ container's runtime environment.
 
 A `voidshell` user is pre-baked into the image at UID 1000, a member of the
 `brew` group. The image has no `ENTRYPOINT`; it uses `CMD ["/bin/bash", "-l"]`
-so the container starts a login shell directly as that user.
+for standalone image use. In workspace pods, ADR 004 replaces PID 1 with a
+keepalive process and starts independent login shells through Kubernetes exec.
 
 ### Pod securityContext
 
@@ -83,12 +85,9 @@ dedicated PVC, while ephemeral workspaces receive a fresh `emptyDir` per pod.
 
 ## Consequences
 
-- Operators must build and publish the workspace image separately from the server
-  image. A `docker build -f Dockerfile.workspace` step is documented but not yet
-  automated in CI.
-- `shellCommand` in the config must be left unset (or empty) when using the
-  workspace image, because setting it overrides the `CMD` and bypasses the
-  default login shell invocation.
+- CI builds both images. Custom images can be built using `Dockerfile.workspace`.
+- `shellCommand` configures each independent shell session, defaulting to
+  `/bin/bash -l`; it no longer selects the pod main process (ADR 004).
 - `/home/workspace` is an `emptyDir` for ordinary selectors and a PVC mount only
 for `persist.<workspace>`. Files in both the container layer and an ordinary
 workspace disappear when its pod is deleted.
