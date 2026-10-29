@@ -251,4 +251,29 @@ process-local workspace leases. The Helm chart enforces one replica and `Recreat
 upgrades. See [ADR 004](adr/004-independent-sessions-and-workspace-lifecycle.md)
 for ownership, cleanup, cancellation limits, and crash recovery limitations.
 
+## SEC-012 — HTTP/2 dependency fix and generated workspace SSH keys
+
+**Status:** Fixed
+
+The proxy image scan identified CVE-2026-78669 in `golang.org/x/net` v0.58.0,
+which is used by the Kubernetes client dependency graph. The module is updated
+to v0.60.0, the scanner's fixed version. Image vulnerability and secret scans
+remain blocking checks before publication.
+
+Installing `openssh-sftp-server` with APT recommendations also installed
+`openssh-server`, whose package setup generated host private keys inside the
+workspace image. The workspace needs the SFTP executable over Kubernetes exec,
+not an SSH daemon. Install packages with `--no-install-recommends`, explicitly
+include `ca-certificates` for HTTPS tooling, and fail the image build if `sshd`
+or generated host-key files are present. This prevents the keys from being
+created in the image layer rather than suppressing the scan findings.
+
+Keep Ubuntu 26.04 LTS as the workspace base. It is supported through May 2031;
+26.10 is an interim release with standard support only through July 2027.
+Builds refresh the base and upgrade installed Ubuntu packages. Changing the
+Ubuntu release would not address these two causes.
+
+Sources: [Go vulnerability report](https://pkg.go.dev/vuln/GO-2026-6611),
+[Ubuntu release lifecycle](https://ubuntu.com/about/release-cycle).
+
 <!-- Next issues to be added here as the review progresses -->

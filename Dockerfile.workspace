@@ -5,8 +5,9 @@ ENV DEBIAN_FRONTEND=noninteractive
 # The Ubuntu base includes Pebble for image-building use. The workspace starts
 # Bash directly and does not need an init/service manager. Upgrade first so the
 # image does not retain fixed security packages from the mutable Ubuntu base.
-RUN apt-get update && apt-get upgrade -y && apt-get install -y \
+RUN apt-get update && apt-get upgrade -y && apt-get install -y --no-install-recommends \
     build-essential \
+    ca-certificates \
     curl \
     file \
     git \
@@ -15,7 +16,14 @@ RUN apt-get update && apt-get upgrade -y && apt-get install -y \
     openssh-sftp-server \
     rsync \
     && rm -rf /var/lib/apt/lists/* \
-    && rm -f /usr/bin/pebble
+    && rm -f /usr/bin/pebble \
+    && test ! -e /usr/sbin/sshd \
+    && test -z "$(find /etc/ssh -maxdepth 1 -name 'ssh_host_*_key*' -print -quit)"
+
+# openssh-sftp-server recommends openssh-server, which generates host private
+# keys during installation. SFTP runs over Kubernetes exec; no SSH daemon or
+# image-baked host keys are needed. Keep recommendations disabled and fail the
+# build above if either appears. ca-certificates is explicit for HTTPS tooling.
 
 # Dedicated group + user for owning the Homebrew installation.
 # UID/GID 900 is below the workspace user (UID 1000) so there is no conflict.
