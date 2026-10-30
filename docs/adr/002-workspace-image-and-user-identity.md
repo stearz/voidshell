@@ -33,9 +33,10 @@ The image:
 
 - Bases on `ubuntu:26.04` (current LTS).
 - Pre-installs Homebrew at `/home/linuxbrew/.linuxbrew` using a dedicated
-  `linuxbrew` build user (UID/GID 900). The prefix is owned by the `brew` group
-  with group-write + setgid permissions, so any user added to that group can
-  install packages.
+  `linuxbrew` build user (UID/GID 900), then transfers the prefix to the
+  runtime `voidshell` user and `brew` group. Matching repository ownership to
+  the runtime UID satisfies Git ownership checks without `safe.directory`
+  exceptions. Group-write + setgid permissions allow package installation.
 - Pre-bakes a `voidshell` user (UID 1000, member of the `brew` group) so the
   container starts directly as a non-root user.
 - Uses `CMD ["/bin/bash", "-l"]` with no `ENTRYPOINT`; user setup happens at
@@ -67,12 +68,14 @@ during its lifecycle.
 
 ### Prompt identity (`/etc/profile.d/voidshell-prompt.sh`)
 
-Alongside `VOIDSHELL_USER`, voidshell also injects `USER` and `LOGNAME` set to
-the logical workspace name. A `/etc/profile.d/voidshell-prompt.sh` script sets
+Alongside `VOIDSHELL_USER`, voidshell injects `USER` and `LOGNAME` set to
+`voidshell`, matching the Linux account for UID 1000. Tools such as Homebrew
+resolve these variables through the passwd database, so a display-only workspace
+name breaks package extraction. A `/etc/profile.d/voidshell-prompt.sh` script sets
 `PS1` to `${VOIDSHELL_USER}@\h:\w\$`, so the connecting user sees their selected
 workspace name in the prompt. `whoami` still returns `voidshell` (it resolves
-UID 1000 from `/etc/passwd`), but `$USER` and `$LOGNAME` return that workspace
-name.
+UID 1000 from `/etc/passwd`), and `$USER` and `$LOGNAME` return `voidshell`.
+Only `VOIDSHELL_USER` and the prompt carry the logical workspace name.
 
 Homebrew is wired into all login shells via `/etc/profile.d/homebrew.sh`, which
 is baked into the image at build time.
@@ -101,7 +104,7 @@ workspace disappear when its pod is deleted.
   the username would be hardcoded and would not match what the user typed. Adopted
   after reconsidering: fixing UID 1000 is acceptable because each workspace has a
   dedicated PVC (no collision risk), and the SSH username is surfaced in the prompt
-  via `PS1` and the `USER`/`LOGNAME` env vars. This also satisfies `runAsNonRoot`.
+  via `PS1` and `VOIDSHELL_USER`. This also satisfies `runAsNonRoot`.
 - **Kubernetes `securityContext.runAsUser` (dynamic UID)** — rejected because we
   do not know the numeric UID of the SSH user at pod-creation time; we only know
   the string name. The fixed UID 1000 strategy (above) sidesteps this limitation.

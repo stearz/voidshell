@@ -275,8 +275,8 @@ func buildPod(id workspace.Identity, mode workspace.StorageMode, cfg Config) *co
 				Env: []corev1.EnvVar{
 					{Name: "HOME", Value: workspaceMountPath},
 					{Name: "VOIDSHELL_USER", Value: id.SSHUser},
-					{Name: "USER", Value: id.SSHUser},
-					{Name: "LOGNAME", Value: id.SSHUser},
+					{Name: "USER", Value: "voidshell"},
+					{Name: "LOGNAME", Value: "voidshell"},
 				},
 				SecurityContext: &corev1.SecurityContext{
 					RunAsUser:                &uid,

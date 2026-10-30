@@ -89,13 +89,23 @@ Three env vars are injected into the pod at creation time:
 | Variable | Value | Purpose |
 |---|---|---|
 | `VOIDSHELL_USER` | `<ssh_username>` | Used by the profile.d script |
-| `USER` | `<ssh_username>` | Shell and tool conventions |
-| `LOGNAME` | `<ssh_username>` | POSIX login name |
+| `USER` | `voidshell` | Linux account for tool compatibility |
+| `LOGNAME` | `voidshell` | Linux login name |
 
 `/etc/profile.d/voidshell-prompt.sh` sets `PS1` to `${VOIDSHELL_USER}@\h:\w\$`
 so the prompt displays the SSH username. `whoami` returns `voidshell` because it
-looks up UID 1000 in `/etc/passwd`; `$USER` and `$LOGNAME` return the SSH
-username.
+looks up UID 1000 in `/etc/passwd`; `$USER` and `$LOGNAME` also return
+`voidshell`. Keep these variables aligned with the Linux account: Homebrew
+looks up `$USER` when extracting packages. `VOIDSHELL_USER` carries the SSH
+username for display only.
+
+The image transfers Homebrew repository ownership from its build user to
+`voidshell`, allowing Git operations such as `brew update` without trust
+exceptions. These image and pod-environment fixes apply to newly created
+workspaces after updating both server and workspace images. An existing
+workspace can use `export USER="$(id -un)" LOGNAME="$(id -un)"` and
+`git config --global --add safe.directory /home/linuxbrew/.linuxbrew/Homebrew`
+as a temporary workaround. The exports apply only to the current shell.
 
 ### Building the workspace image
 

@@ -423,3 +423,20 @@ func TestPodSupportsIndependentNonRootProcesses(t *testing.T) {
 	}
 	t.Fatal("HOME must point at the workspace volume")
 }
+
+// Workspace selectors are display names, not Linux accounts. Homebrew resolves
+// USER through the passwd database when extracting bottles.
+func TestPodIdentityUsesLinuxAccount(t *testing.T) {
+	pod := buildPod(workspace.New("alice", "stephan"), workspace.StorageEphemeral, testConfig())
+	env := map[string]string{}
+	for _, v := range pod.Spec.Containers[0].Env {
+		env[v.Name] = v.Value
+	}
+	for name, want := range map[string]string{
+		"USER": "voidshell", "LOGNAME": "voidshell", "VOIDSHELL_USER": "stephan",
+	} {
+		if env[name] != want {
+			t.Errorf("%s = %q, want %q", name, env[name], want)
+		}
+	}
+}
