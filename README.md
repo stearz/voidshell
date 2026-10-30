@@ -350,6 +350,13 @@ versioned proxy image and OCI Helm chart. `feat:` adds a minor version, `fix:` a
 patch, and breaking changes a major version. See
 [the workflows](.github/workflows) for the exact build and release configuration.
 
+`VERSION` contains the release version as a single plain-text line for scripts
+and packaging tools. Release-please uses its `simple` strategy with
+`version-file: VERSION` to update it alongside the changelog, release manifest,
+and Helm chart metadata in each release PR. The generic updater requires inline
+annotations and would leave this plain version file unchanged. The application
+does not currently read `VERSION` at runtime.
+
 ## Further reading
 
 - [Operations guide](docs/operations.md) — deployment, smoke checks, cleanup, and recovery.
