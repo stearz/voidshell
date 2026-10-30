@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.7.0](https://github.com/stearz/voidshell/compare/v0.6.0...v0.7.0) (2026-10-30)
+
+
+### Features
+
+* add independent SSH sessions, file transfers, and local forwarding ([72836ae](https://github.com/stearz/voidshell/commit/72836aec3dd0720a1bbd8af6f4e54ec259375a5e))
+
+
+### Bug Fixes
+
+* align workspace identity and Homebrew ownership ([1343a41](https://github.com/stearz/voidshell/commit/1343a41fbd20540f2603239b4dc98997a4b577ee))
+* remove workspace SSH host keys and patch HTTP/2 dependency ([f2cf3f5](https://github.com/stearz/voidshell/commit/f2cf3f51f621772f05fa7b3707d9646fe01cb525))
+* update plain VERSION file with release-please ([968a92a](https://github.com/stearz/voidshell/commit/968a92aa1fc27f894ffe5294443d3d09f6eeed3c))
+
 ## [0.6.0](https://github.com/stearz/voidshell/compare/v0.5.0...v0.6.0) (2026-10-04)
 
 
