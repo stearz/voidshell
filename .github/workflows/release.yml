@@ -19,6 +19,17 @@ env:
 jobs:
   container:
     name: Publish container image
+    concurrency:
+      group: ghcr-images
+      cancel-in-progress: false
+    strategy:
+      max-parallel: 1
+      matrix:
+        include:
+          - dockerfile: Dockerfile
+            suffix: ''
+          - dockerfile: Dockerfile.workspace
+            suffix: '-workspace'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -45,11 +56,12 @@ jobs:
         uses: docker/build-push-action@v7
         with:
           context: .
+          file: ${{ matrix.dockerfile }}
           platforms: linux/amd64,linux/arm64
           push: true
           tags: |
-            ${{ env.IMAGE }}:${{ steps.ver.outputs.tag }}
-            ${{ env.IMAGE }}:latest
+            ${{ env.IMAGE }}${{ matrix.suffix }}:${{ steps.ver.outputs.tag }}
+            ${{ env.IMAGE }}${{ matrix.suffix }}:latest
           labels: |
             org.opencontainers.image.version=${{ steps.ver.outputs.semver }}
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
@@ -74,6 +86,7 @@ jobs:
         run: |
           TAG="${{ github.event.release.tag_name }}"
           echo "semver=${TAG#v}" >> $GITHUB_OUTPUT
+          echo "tag=${TAG}" >> $GITHUB_OUTPUT
 
       - name: Stamp chart version and appVersion
         run: |

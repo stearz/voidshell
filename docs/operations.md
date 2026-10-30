@@ -395,3 +395,30 @@ The following are **not** currently supported:
 - Automated GitOps deployment pipeline
 - Policy engine (time limits, storage quotas beyond PVC size)
 - Alternate identity providers (only GitHub public key auth)
+
+## Image publication and retention
+
+CI tests and lints pushes to `main` and pull requests. Image builds and scans
+skip changes limited to Markdown, `docs/`, or `LICENSE`. Pull requests build
+without publishing. Main publishes both `voidshell` and `voidshell-workspace`
+with `main` and full commit-SHA tags. Published GitHub releases publish both
+images with the release tag and `latest`.
+
+The daily cleanup runs at 04:23 UTC (also available via workflow_dispatch).
+It removes SHA-only development versions and orphaned untagged manifests older
+than 24 hours. The current `main`, `latest`, release tags, and other non-SHA
+tags are retained indefinitely, including all recursively referenced platform
+and attestation manifests. Recent versions and their dependencies are also
+protected. Resolution errors stop cleanup before deletion. Helm packages are
+outside the cleanup scope.
+
+Actual retention is roughly 24–48 hours, potentially longer if GitHub delays or
+skips a scheduled run. Historical SHA references can stop pulling after cleanup;
+use release tags for durable deployments. The most recently published `main`
+remains pullable even without new builds. Publishing and cleanup share a
+concurrency group to avoid deleting manifests during publication.
+
+The repository's GITHUB_TOKEN needs admin access to both container packages
+for deletion, in addition to the workflow's `packages: write` permission.
+Packages created by this repository's workflows normally grant that access;
+for existing packages verify their Actions access in package settings.
