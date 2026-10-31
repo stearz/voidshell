@@ -1,0 +1,5 @@
+# Ubuntu's ncurses-term ships the Ghostty capabilities as "ghostty".
+# Ghostty clients advertise "xterm-ghostty" over SSH. Resolve that name to the
+# packaged definition instead of overriding TERM or maintaining a copied database.
+xterm-ghostty|Ghostty terminal emulator,
+	use=ghostty,

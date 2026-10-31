@@ -45,6 +45,15 @@ The image:
 - Uses `CMD ["/bin/bash", "-l"]` with no `ENTRYPOINT`; user setup happens at
   image build time, not at container start.
 
+### Terminal capabilities
+
+The image installs `ncurses-term` and compiles `xterm-ghostty` as a compatibility
+name for Ubuntu's packaged `ghostty` definition. SSH preserves the client's
+original `TERM`; system and Homebrew ncurses applications can resolve it using
+the system terminfo database. A build-time `infocmp` check validates the alias.
+No terminal emulator or global TERM override is needed. Fresh workspace pods are
+required to adopt this image change.
+
 ### Env-var bridge: `VOIDSHELL_USER`
 
 voidshell injects `VOIDSHELL_USER=<workspace_name>` into the pod container spec at
