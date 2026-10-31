@@ -17,6 +17,9 @@ import (
 // Forward uses the Kubernetes API to reach the selected pod's loopback, including
 // services that do not bind the pod IP. It never connects to arbitrary hosts.
 func (m *Manager) Forward(ctx context.Context, id workspace.Identity, mode workspace.StorageMode, port uint16, stdin io.Reader, stdout io.Writer) error {
+	if m.DirectSSHEnabled() {
+		return m.forwardSSH(ctx, id, mode, port, stdin, stdout)
+	}
 	if m.restCfg == nil {
 		return fmt.Errorf("port forwarding unavailable: Manager has no REST config")
 	}

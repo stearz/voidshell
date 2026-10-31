@@ -277,3 +277,22 @@ Sources: [Go vulnerability report](https://pkg.go.dev/vuln/GO-2026-6611),
 [Ubuntu release lifecycle](https://ubuntu.com/about/release-cycle).
 
 <!-- Next issues to be added here as the review progresses -->
+
+## SEC-013 — Direct workspace SSH trust
+
+**Status:** Implemented
+
+The opt-in SSH backend uses pod-owned immutable Secrets, separate per-pod host
+and client keys, exact host-key verification, and no private client key in the
+workspace. Keys rotate with pod recreation; Kubernetes garbage collection removes
+Secrets. The official image now intentionally includes an unprivileged OpenSSH
+daemon and deletes package-generated host keys in the installation layer. This
+supersedes SEC-012's no-sshd-image guard, preserving its prohibition on image-baked
+private keys. The default backend still starts no daemon.
+
+The chart grants Secret get/create only for SSH mode, removes exec/port-forward
+permissions in that mode, and adds selected proxy-to-workspace network rules.
+Workspace API token automount is disabled in both modes. API metadata/Secret
+administrators and the single proxy remain trusted. Review the full boundaries,
+rotation procedure, and additive-policy limitations in
+[ADR 005](adr/005-direct-ssh-backend.md).

@@ -1,0 +1,40 @@
+#!/bin/sh
+set -eu
+# OpenSSH requires a private host-key file owned by its effective UID. Secret
+# volumes are root-owned; copy only the host key into a private runtime directory.
+runtime=$(mktemp -d /run/voidshell/sshd.XXXXXXXX)
+chmod 700 "$runtime"
+cp /run/voidshell-ssh/host-key "$runtime/host-key"
+cp /run/voidshell-ssh/authorized_keys "$runtime/authorized_keys"
+chmod 600 "$runtime/host-key" "$runtime/authorized_keys"
+cat > "$runtime/sshd_config" <<CONFIG
+Port 2222
+ListenAddress 0.0.0.0
+ListenAddress ::
+HostKey $runtime/host-key
+PidFile $runtime/sshd.pid
+AuthorizedKeysFile $runtime/authorized_keys
+StrictModes yes
+PubkeyAuthentication yes
+LoginGraceTime 15
+MaxStartups 64:30:128
+AuthenticationMethods publickey
+PasswordAuthentication no
+KbdInteractiveAuthentication no
+UsePAM no
+PermitRootLogin no
+AllowUsers voidshell
+AllowAgentForwarding no
+X11Forwarding no
+PermitTunnel no
+AllowTcpForwarding local
+PermitOpen 127.0.0.1:* localhost:* [::1]:*
+PermitListen none
+GatewayPorts no
+PermitUserEnvironment no
+PrintMotd no
+PrintLastLog no
+Subsystem sftp internal-sftp
+SetEnv HOME=/home/workspace VOIDSHELL_USER=${VOIDSHELL_USER:-workspace} PATH=${PATH}
+CONFIG
+exec /usr/sbin/sshd -D -e -f "$runtime/sshd_config"

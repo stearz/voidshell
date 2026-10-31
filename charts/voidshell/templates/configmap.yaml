@@ -20,6 +20,7 @@ data:
       storageClass: {{ .Values.kubernetes.storageClass | quote }}
       storageSize: {{ .Values.kubernetes.storageSize | quote }}
     workspace:
+      backend: {{ .Values.workspace.backend | quote }}
       image: {{ .Values.workspace.image | quote }}
       shellCommand:
         {{- range .Values.workspace.shellCommand }}

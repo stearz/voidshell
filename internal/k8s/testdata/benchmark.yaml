@@ -1,0 +1,78 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: voidshell-benchmark
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: benchmark
+  namespace: voidshell-benchmark
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: benchmark
+  namespace: voidshell-benchmark
+rules:
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list", "create", "delete"]
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["get", "create"]
+  - apiGroups: [""]
+    resources: ["pods/exec", "pods/portforward"]
+    verbs: ["create"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: benchmark
+  namespace: voidshell-benchmark
+subjects:
+  - kind: ServiceAccount
+    name: benchmark
+    namespace: voidshell-benchmark
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: benchmark
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: voidshell-benchmark-metrics
+rules:
+  - nonResourceURLs: ["/metrics"]
+    verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: voidshell-benchmark-metrics
+subjects:
+  - kind: ServiceAccount
+    name: benchmark
+    namespace: voidshell-benchmark
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: voidshell-benchmark-metrics
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: benchmark
+  namespace: voidshell-benchmark
+spec:
+  serviceAccountName: benchmark
+  restartPolicy: Never
+  containers:
+    - name: benchmark
+      image: voidshell-benchmark-runner:test
+      imagePullPolicy: Never
+      args: ["-test.run=TestBackendBenchmark", "-test.v", "-test.timeout=6m"]
+      env:
+        - name: VOIDSHELL_BENCHMARK_IMAGE
+          value: voidshell-benchmark-workspace:test
