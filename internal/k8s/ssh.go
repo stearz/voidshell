@@ -187,12 +187,38 @@ func (m *Manager) forwardSSH(ctx context.Context, id workspace.Identity, mode wo
 		return err
 	}
 	defer conn.Close()
+	inputDone, outputDone := make(chan error, 1), make(chan error, 1)
 	go func() {
-		io.Copy(conn, stdin)
-		if cw, ok := conn.(interface{ CloseWrite() error }); ok {
-			cw.CloseWrite()
+		_, err := io.Copy(conn, stdin)
+		if half, ok := conn.(interface{ CloseWrite() error }); ok {
+			half.CloseWrite()
 		}
+		inputDone <- err
 	}()
-	_, err = io.Copy(stdout, conn)
-	return err
+	go func() {
+		_, err := io.Copy(stdout, conn)
+		if half, ok := stdout.(interface{ CloseWrite() error }); ok {
+			half.CloseWrite()
+		}
+		outputDone <- err
+	}()
+	// A service can stop writing while it still reads. Forward each EOF on its
+	// own and retain the transport/lease until both halves end or cancellation.
+	for range 2 {
+		select {
+		case err := <-inputDone:
+			if err != nil {
+				return err
+			}
+			inputDone = nil
+		case err := <-outputDone:
+			if err != nil {
+				return err
+			}
+			outputDone = nil
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
+	return nil
 }
