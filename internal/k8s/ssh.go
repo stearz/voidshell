@@ -11,6 +11,7 @@ import (
 	"net"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/stearz/voidshell/internal/workspace"
@@ -182,29 +183,58 @@ func (m *Manager) forwardSSH(ctx context.Context, id workspace.Identity, mode wo
 	defer client.Close()
 	stop := context.AfterFunc(ctx, func() { client.Close() })
 	defer stop()
-	conn, err := client.DialContext(ctx, "tcp", net.JoinHostPort("127.0.0.1", strconv.Itoa(int(port))))
+	// Keep the backend channel-close notification: DialContext discards it,
+	// preventing us from knowing when OpenSSH has flushed the TCP write queue.
+	request := struct {
+		Host       string
+		Port       uint32
+		OriginHost string
+		OriginPort uint32
+	}{"127.0.0.1", uint32(port), "127.0.0.1", 0}
+	conn, requests, err := client.OpenChannel("direct-tcpip", ssh.Marshal(request))
 	if err != nil {
 		return err
 	}
 	defer conn.Close()
+	// Cancellation must interrupt setup immediately. After forwarding starts,
+	// normal output EOF followed by client close needs a bounded input drain.
+	stop()
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	remoteClosed := make(chan struct{})
+	go func() { ssh.DiscardRequests(requests); close(remoteClosed) }()
+	go io.Copy(io.Discard, conn.Stderr())
 	inputDone, outputDone := make(chan error, 1), make(chan error, 1)
+	var outputEOF atomic.Bool
 	go func() {
 		_, err := io.Copy(conn, stdin)
-		if half, ok := conn.(interface{ CloseWrite() error }); ok {
-			half.CloseWrite()
-		}
+		conn.CloseWrite()
 		inputDone <- err
 	}()
 	go func() {
 		_, err := io.Copy(stdout, conn)
+		if err == nil {
+			outputEOF.Store(true)
+		}
 		if half, ok := stdout.(interface{ CloseWrite() error }); ok {
 			half.CloseWrite()
 		}
 		outputDone <- err
 	}()
-	// A service can stop writing while it still reads. Forward each EOF on its
-	// own and retain the transport/lease until both halves end or cancellation.
-	for range 2 {
+	cancelled := ctx.Done()
+	var drainTimer *time.Timer
+	var drainExpired <-chan time.Time
+	defer func() {
+		if drainTimer != nil {
+			drainTimer.Stop()
+		}
+	}()
+	// A normal OpenSSH client closes its channel/transport once both EOFs have
+	// been exchanged. Its last input bytes may still be buffered locally or in
+	// the backend's TCP queue. Preserve them and await the backend's CLOSE before
+	// dropping that transport. An abort before output EOF still cancels at once.
+	for inputDone != nil || outputDone != nil || remoteClosed != nil {
 		select {
 		case err := <-inputDone:
 			if err != nil {
@@ -216,7 +246,19 @@ func (m *Manager) forwardSSH(ctx context.Context, id workspace.Identity, mode wo
 				return err
 			}
 			outputDone = nil
-		case <-ctx.Done():
+		case <-remoteClosed:
+			remoteClosed = nil
+		case <-cancelled:
+			// Mark EOF before sending it, so an immediate peer CLOSE cannot
+			// race the output-copy goroutine's completion notification.
+			if !outputEOF.Load() {
+				return ctx.Err()
+			}
+
+			cancelled = nil
+			drainTimer = time.NewTimer(5 * time.Second)
+			drainExpired = drainTimer.C
+		case <-drainExpired:
 			return ctx.Err()
 		}
 	}

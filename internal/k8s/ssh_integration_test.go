@@ -58,7 +58,7 @@ func TestDirectSSHOpenSSH(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	docker := func(args ...string) string {
+	docker := func(t *testing.T, args ...string) string {
 		t.Helper()
 		out, err := exec.CommandContext(ctx, "docker", args...).CombinedOutput()
 		if err != nil {
@@ -66,7 +66,7 @@ func TestDirectSSHOpenSSH(t *testing.T) {
 		}
 		return strings.TrimSpace(string(out))
 	}
-	container := docker("run", "--rm", "-d", "--cap-drop=ALL", "--security-opt=no-new-privileges", "-e", "PATH=/test-bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin", "-p", "127.0.0.1:2222:2222", "-v", dir+":/run/voidshell-ssh:ro", image)
+	container := docker(t, "run", "--rm", "-d", "--cap-drop=ALL", "--security-opt=no-new-privileges", "-e", "PATH=/test-bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin", "-p", "127.0.0.1:2222:2222", "-v", dir+":/run/voidshell-ssh:ro", image)
 	defer func() { exec.Command("docker", "rm", "-f", container).Run() }()
 	// Wait for the SSH handshake rather than relying on a container-start delay.
 	var backend *ssh.Client
@@ -78,7 +78,7 @@ func TestDirectSSHOpenSSH(t *testing.T) {
 		time.Sleep(100 * time.Millisecond)
 	}
 	if err != nil {
-		t.Fatalf("workspace SSH startup: %v; logs: %s", err, docker("logs", container))
+		t.Fatalf("workspace SSH startup: %v; logs: %s", err, docker(t, "logs", container))
 	}
 	backend.Close()
 	// Verify both host-key pinning and client authentication fail closed.
@@ -134,6 +134,15 @@ func TestDirectSSHOpenSSH(t *testing.T) {
 	}
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
+		t.Fatal(err)
+	}
+	clientFiles := t.TempDir()
+	clientKeyPath := filepath.Join(clientFiles, "client")
+	clientKnownHosts := filepath.Join(clientFiles, "known_hosts")
+	if err := os.WriteFile(clientKeyPath, outerPEM, 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(clientKnownHosts, []byte(fmt.Sprintf("[127.0.0.1]:%d %s", ln.Addr().(*net.TCPAddr).Port, ssh.MarshalAuthorizedKey(signer.PublicKey()))), 0600); err != nil {
 		t.Fatal(err)
 	}
 	srv := server.New(signer, integrationAuth{}, m, m, slog.New(slog.NewTextHandler(io.Discard, nil)))
@@ -307,12 +316,10 @@ func TestDirectSSHOpenSSH(t *testing.T) {
 		}
 	})
 	t.Run("SFTP and SCP", func(t *testing.T) {
-		keyPath := filepath.Join(dir, "client")
-		os.WriteFile(keyPath, outerPEM, 0600)
-		known := filepath.Join(dir, "known_hosts")
+		keyPath := clientKeyPath
+		known := clientKnownHosts
 		// OpenSSH's nonstandard-port host form is [host]:port.
 		port := ln.Addr().(*net.TCPAddr).Port
-		os.WriteFile(known, []byte(fmt.Sprintf("[127.0.0.1]:%d %s", port, ssh.MarshalAuthorizedKey(signer.PublicKey()))), 0600)
 		payload := bytes.Repeat([]byte{0, 1, 2, 255}, 256*1024)
 		source, destination := filepath.Join(dir, "source"), filepath.Join(dir, "download")
 		os.WriteFile(source, payload, 0600)
@@ -361,9 +368,15 @@ func TestDirectSSHOpenSSH(t *testing.T) {
 		close(start)
 		wg.Wait()
 	})
-	t.Run("forward output EOF preserves input", func(t *testing.T) {
-		docker("exec", "-d", container, "python3", "-c", `import pathlib,socket
+	for _, transport := range []string{"Go client", "direct OpenSSH CLI", "proxied OpenSSH CLI"} {
+		name := "forward output EOF preserves input " + transport
+		t.Run(name, func(t *testing.T) {
+			docker(t, "exec", container, "python3", "-c", `import pathlib
+for name in ["half-close-ready","half-close-input"]:
+ pathlib.Path("/home/workspace/"+name).unlink(missing_ok=True)`)
+			docker(t, "exec", "-d", container, "python3", "-c", `import pathlib,socket
 s=socket.socket()
+s.setsockopt(socket.SOL_SOCKET,socket.SO_REUSEADDR,1)
 s.bind(("127.0.0.1",8081))
 s.listen(1)
 pathlib.Path("/home/workspace/half-close-ready").touch()
@@ -379,52 +392,106 @@ pathlib.Path("/home/workspace/half-close-input.tmp").write_bytes(data)
 pathlib.Path("/home/workspace/half-close-input.tmp").rename("/home/workspace/half-close-input")
 c.close()
 s.close()`)
-		docker("exec", container, "python3", "-c", `import pathlib,time
+			docker(t, "exec", container, "python3", "-c", `import pathlib,time
 for _ in range(100):
  if pathlib.Path("/home/workspace/half-close-ready").exists(): break
  time.sleep(.05)
 else: raise RuntimeError("half-close service not ready")`)
-		conn, err := client.Dial("tcp", "127.0.0.1:8081")
-		if err != nil {
-			t.Fatal(err)
-		}
-		defer conn.Close()
-		type result struct {
-			data []byte
-			err  error
-		}
-		output := make(chan result, 1)
-		go func() { data, err := io.ReadAll(conn); output <- result{data, err} }()
-		select {
-		case got := <-output:
-			if got.err != nil || string(got.data) != "greeting" {
-				t.Fatalf("forwarded output=%q err=%v", got.data, got.err)
+			var conn net.Conn
+			if transport != "Go client" {
+				port := ln.Addr().(*net.TCPAddr).Port
+				keyPath := clientKeyPath
+				knownPath := clientKnownHosts
+				user := "dev"
+				if transport == "direct OpenSSH CLI" {
+					port = 2222
+					user = "voidshell"
+					credentials := t.TempDir()
+					keyPath = filepath.Join(credentials, "client")
+					knownPath = filepath.Join(credentials, "known_hosts")
+					if err := os.WriteFile(keyPath, secret.Data["client-key"], 0600); err != nil {
+						t.Fatal(err)
+					}
+					host, err := ssh.ParsePrivateKey(secret.Data["host-key"])
+					if err != nil {
+						t.Fatal(err)
+					}
+					if err := os.WriteFile(knownPath, []byte(fmt.Sprintf("[127.0.0.1]:%d %s", port, ssh.MarshalAuthorizedKey(host.PublicKey()))), 0600); err != nil {
+						t.Fatal(err)
+					}
+				}
+				reservation, err := net.Listen("tcp", "127.0.0.1:0")
+				if err != nil {
+					t.Fatal(err)
+				}
+				localPort := reservation.Addr().(*net.TCPAddr).Port
+				reservation.Close()
+				command := exec.CommandContext(ctx, "ssh", "-F", "/dev/null", "-p", strconv.Itoa(port), "-i", keyPath, "-o", "BatchMode=yes", "-o", "IdentitiesOnly=yes", "-o", "StrictHostKeyChecking=yes", "-o", "UserKnownHostsFile="+knownPath, "-o", "ExitOnForwardFailure=yes", "-N", "-L", fmt.Sprintf("127.0.0.1:%d:127.0.0.1:8081", localPort), user+"@127.0.0.1")
+				var diagnostics bytes.Buffer
+				command.Stderr = &diagnostics
+				if err := command.Start(); err != nil {
+					t.Fatal(err)
+				}
+				defer func() { command.Process.Kill(); command.Wait() }()
+				for deadline := time.Now().Add(5 * time.Second); time.Now().Before(deadline); {
+					conn, err = net.DialTimeout("tcp", fmt.Sprintf("127.0.0.1:%d", localPort), 100*time.Millisecond)
+					if err == nil {
+						break
+					}
+					time.Sleep(20 * time.Millisecond)
+				}
+				if err != nil {
+					t.Fatalf("SSH -L listener: %v", err)
+				}
+			} else {
+				var err error
+				conn, err = client.Dial("tcp", "127.0.0.1:8081")
+				if err != nil {
+					t.Fatal(err)
+				}
 			}
-		case <-time.After(2 * time.Second):
-			t.Fatal("forwarded output EOF withheld")
-		}
-		payload := "input after output EOF"
-		if n, err := io.WriteString(conn, payload); err != nil || n != len(payload) {
-			t.Fatalf("input after output EOF: wrote %d bytes, err=%v", n, err)
-		}
-		half, ok := conn.(interface{ CloseWrite() error })
-		if !ok {
-			t.Fatal("forward has no input half-close")
-		}
-		if err := half.CloseWrite(); err != nil {
-			t.Fatal(err)
-		}
-		docker("exec", container, "python3", "-c", `import pathlib,time
+			defer conn.Close()
+			half, ok := conn.(interface{ CloseWrite() error })
+			if !ok {
+				t.Fatal("forward has no input half-close")
+			}
+
+			type result struct {
+				data []byte
+				err  error
+			}
+			output := make(chan result, 1)
+			go func() { data, err := io.ReadAll(conn); output <- result{data, err} }()
+			select {
+			case got := <-output:
+				if got.err != nil || string(got.data) != "greeting" {
+					t.Fatalf("forwarded output=%q err=%v", got.data, got.err)
+				}
+			case <-time.After(2 * time.Second):
+				t.Fatal("forwarded output EOF withheld")
+			}
+			payload := "input after output EOF"
+			if n, err := io.WriteString(conn, payload); err != nil || n != len(payload) {
+				t.Fatalf("input after output EOF: wrote %d bytes, err=%v", n, err)
+			}
+			if err := half.CloseWrite(); err != nil {
+				t.Fatal(err)
+			}
+			if transport != "Go client" {
+				conn.Close()
+			}
+			docker(t, "exec", container, "python3", "-c", `import pathlib,time
 p=pathlib.Path("/home/workspace/half-close-input")
 for _ in range(100):
  if p.exists(): break
  time.sleep(.05)
 else: raise RuntimeError("forwarded input never reached EOF")
 assert p.read_bytes()==b"input after output EOF",p.read_bytes()`)
-	})
+		})
+	}
 	t.Run("loopback forwarding", func(t *testing.T) {
-		docker("exec", "-d", container, "python3", "-m", "http.server", "8080", "--bind", "127.0.0.1")
-		docker("exec", container, "python3", "-c", `import socket,time
+		docker(t, "exec", "-d", container, "python3", "-m", "http.server", "8080", "--bind", "127.0.0.1")
+		docker(t, "exec", container, "python3", "-c", `import socket,time
 for attempt in range(100):
  try:
   socket.create_connection(("127.0.0.1",8080),timeout=.1).close()

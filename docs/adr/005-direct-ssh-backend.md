@@ -19,7 +19,10 @@ stderr and releases the lease before forwarding exit status or exit signal.
 Backend output EOF is forwarded once both output streams drain, even if the
 process is still running; the input half remains open until the client ends it. Loopback forwarding also
 propagates each direction's EOF separately and retains its lease until both
-directions finish or the channel/transport is cancelled.
+directions finish. After output EOF, a normal OpenSSH client may immediately
+close its outer channel/transport. The proxy drains remaining input and waits for
+the backend's channel CLOSE before dropping the internal transport, with a
+five-second cancellation drain bound. Earlier aborts cancel immediately.
 
 The proxy forwards validated shell/exec/SFTP, PTY, resize, and signal requests.
 It rejects environment, agent, X11, unknown subsystem, and repeated start
