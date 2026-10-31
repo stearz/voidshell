@@ -461,3 +461,9 @@ publishes a chart named `<chart-version>-dev.g<first-12-SHA-characters>`, with
 Use the workflow's run summary for the exact chart version and pin both images
 to that same full SHA in the GitOps repository. Pull-request events still publish
 no artifacts. A development rollout does not require merging the feature PR.
+
+Main and dispatched development publication share the `ghcr-images` concurrency
+lock with release publication and image cleanup. Pull-request builds use separate
+PR groups because they publish nothing. Keep all publishing events under the
+shared lock: cleanup may otherwise delete an existing manifest selected before a
+development rerun adds its protected tag.
