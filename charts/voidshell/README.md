@@ -62,7 +62,9 @@ The chart creates:
 
 The voidshell ServiceAccount in `.Release.Namespace` is bound cross-namespace to the guest Role. It holds **no cluster-scoped permissions**.
 
-The SSH host key secret is mounted as a file — no `secrets/get` API permission is required.
+The listener host key Secret is mounted as a file. With `workspace.backend: ssh`,
+the guest Role replaces exec/port-forward permissions with `secrets/get,create`
+for per-pod authentication and host keys.
 
 ## Values reference
 
@@ -77,6 +79,7 @@ The SSH host key secret is mounted as a file — no `secrets/get` API permission
 | `kubernetes.guestNamespace` | `voidshell-guest` | Namespace for workspace pods and persistent-mode PVCs |
 | `kubernetes.storageClass` | `""` | Optional class for `persist.<workspace>` PVCs; empty uses the cluster default |
 | `kubernetes.storageSize` | `5Gi` | PVC size for `persist.<workspace>` workspaces |
+| `workspace.backend` | `kubernetes` | `kubernetes` Exec API or `ssh` direct pod transport |
 | `workspace.image` | `ghcr.io/stearz/voidshell-workspace:main` | Image used for workspace pods |
 | `workspace.shellCommand` | `[/bin/bash, -l]` | Shell process started for each session |
 | `service.type` | `ClusterIP` | Service type |
@@ -93,7 +96,7 @@ other than 1 and uses `Recreate` upgrades because workspace leases are coordinat
 in memory. Upgrades interrupt active SSH connections. Graceful shutdown waits for
 workspace cleanup; abrupt crashes can leave orphaned pods.
 
-The proxy requires `pods/exec` and `pods/portforward` create permissions in the
+With the default Kubernetes backend, the proxy requires `pods/exec` and `pods/portforward` create permissions in the
 guest namespace. Forwarding goes through the Kubernetes API, so no direct
 proxy-to-workspace network exception is required. Continue to allow proxy egress
 to your API server via `networkPolicy.egressPrivateExceptions`.
@@ -107,3 +110,21 @@ The pod is deleted after its last active shell, command, SFTP, or forwarding
 channel closes. `HOME` and the working directory are `/home/workspace`, writable
 via pod `fsGroup: 1000`. Only `persist.<workspace>` home volumes survive deletion.
 See [ADR 004](../../docs/adr/004-independent-sessions-and-workspace-lifecycle.md).
+
+## Direct SSH requirements
+
+Set `workspace.backend: ssh` and use a workspace image built from this revision.
+The proxy must reach workspace pod IPs on TCP 2222. When NetworkPolicy is enabled,
+the chart adds proxy egress to matching workspace pods and restricts their ingress
+to this release's proxy pods. A compatible CNI is required; other policies can
+add permissions. Workspace egress policy is operator-owned. Keep the API-server
+private-network exception: provisioning and per-pod Secret reads still use it.
+
+The startup script runs OpenSSH as UID 1000 with all capabilities dropped. It
+mounts only the pod's host private key and authorized client public key. Pod-owned
+immutable Secrets rotate with pod recreation and are garbage-collected. No keys
+are baked into the image or stored on the home PVC. The proxy pins the pod's exact
+host key. `workspace.shellCommand` applies only to Kubernetes mode; SSH uses the
+image's passwd shell. Review [ADR 005](../../docs/adr/005-direct-ssh-backend.md)
+for custom-image requirements and key rotation. Remove old workspace pods when
+switching backends, preserving their PVCs.

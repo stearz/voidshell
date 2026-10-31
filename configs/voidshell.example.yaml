@@ -30,6 +30,8 @@ kubernetes:
   storageSize: 5Gi
 
 workspace:
+  # kubernetes keeps data on the Exec API; ssh uses direct pod networking.
+  backend: kubernetes
   # OCI image used for the workspace Pod. The default workspace image has
   # Homebrew pre-installed. Switch to a plain image (e.g. ubuntu:26.04) for
   # a minimal shell without a package manager.

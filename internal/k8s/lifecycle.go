@@ -4,8 +4,9 @@
 //
 //	pods:                    get, list, create, delete
 //	pods/log:                get
-//	pods/exec:               create
-//	pods/portforward:        create
+//	pods/exec:               create (kubernetes backend only)
+//	pods/portforward:        create (kubernetes backend only)
+//	secrets:                 get, create (ssh backend only)
 //	persistentvolumeclaims:  get, create
 //
 // The guest namespace must pre-exist; voidshell does not create it.
@@ -14,6 +15,7 @@ package k8s
 import (
 	"context"
 	"fmt"
+	"sync"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
@@ -36,6 +38,7 @@ const (
 
 // Config holds workspace lifecycle configuration derived from the top-level config.
 type Config struct {
+	Backend string
 	// Namespace is the pre-existing guest namespace for pods and PVCs.
 	Namespace string
 	// StorageClass is the PVC storage class (e.g. "longhorn").
@@ -56,9 +59,10 @@ type Config struct {
 
 // Manager manages the Kubernetes lifecycle of workspace PVCs and shell pods.
 type Manager struct {
-	client  kubernetes.Interface
-	cfg     Config
-	restCfg *rest.Config // nil when created via New (test mode)
+	client       kubernetes.Interface
+	cfg          Config
+	restCfg      *rest.Config // nil when created via New (test mode)
+	sshEndpoints sync.Map     // pod name -> *sshEndpoint, valid for one workspace lease lifetime
 }
 
 // New creates a Manager with the given client and config. Use this in tests
@@ -112,8 +116,18 @@ func (m *Manager) EnsureWorkspace(ctx context.Context, id workspace.Identity, mo
 	if err := m.ensurePod(ctx, id, mode); err != nil {
 		return fmt.Errorf("ensuring pod: %w", err)
 	}
+	if m.DirectSSHEnabled() {
+		if err := m.ensureSSHCredentials(ctx, id, mode); err != nil {
+			return fmt.Errorf("ensuring SSH credentials: %w", err)
+		}
+	}
 	if err := m.waitForPodReady(ctx, id, mode); err != nil {
 		return fmt.Errorf("waiting for pod ready: %w", err)
+	}
+	if m.DirectSSHEnabled() {
+		if err := m.prepareSSH(ctx, id, mode); err != nil {
+			return fmt.Errorf("preparing SSH endpoint: %w", err)
+		}
 	}
 	return nil
 }
@@ -122,6 +136,7 @@ func (m *Manager) EnsureWorkspace(ctx context.Context, id workspace.Identity, mo
 // persistent-mode PVC intact for the next reconnect. It is idempotent: a missing
 // pod is not an error.
 func (m *Manager) DeletePod(ctx context.Context, id workspace.Identity, mode workspace.StorageMode) error {
+	m.sshEndpoints.Delete(id.PodNameFor(mode))
 	err := m.client.CoreV1().Pods(m.cfg.Namespace).Delete(ctx, id.PodNameFor(mode), metav1.DeleteOptions{})
 	if errors.IsNotFound(err) {
 		return nil
@@ -195,6 +210,9 @@ func (m *Manager) ensurePod(ctx context.Context, id workspace.Identity, mode wor
 			return fmt.Errorf("getting pod %q: %w", id.PodNameFor(mode), err)
 		}
 		if pod.DeletionTimestamp == nil {
+			if (pod.Labels["voidshell.io/backend"] == "ssh") != m.DirectSSHEnabled() {
+				return fmt.Errorf("workspace pod backend differs from configured backend; remove old pods before switching")
+			}
 			return nil
 		}
 		// A previous cleanup may have timed out. Never execute in a dying pod.
@@ -256,13 +274,14 @@ func buildPod(id workspace.Identity, mode workspace.StorageMode, cfg Config) *co
 	grace := int64(1)
 	nonRoot := true
 	noEscalation := false
-	return &corev1.Pod{
+	pod := &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      id.PodNameFor(mode),
 			Namespace: cfg.Namespace,
 			Labels:    map[string]string{workspaceLabel: id.WorkspaceID()},
 		},
 		Spec: corev1.PodSpec{
+			AutomountServiceAccountToken:  func() *bool { v := false; return &v }(),
 			RestartPolicy:                 corev1.RestartPolicyNever,
 			TerminationGracePeriodSeconds: &grace,
 			SecurityContext:               &corev1.PodSecurityContext{FSGroup: &uid},
@@ -297,6 +316,10 @@ func buildPod(id workspace.Identity, mode workspace.StorageMode, cfg Config) *co
 			}},
 		},
 	}
+	if cfg.Backend == "ssh" {
+		configureSSHPod(pod)
+	}
+	return pod
 }
 
 func workspaceVolumeSource(id workspace.Identity, mode workspace.StorageMode) corev1.VolumeSource {

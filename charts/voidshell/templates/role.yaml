@@ -14,9 +14,17 @@ rules:
   - apiGroups: [""]
     resources: ["pods/log"]
     verbs: ["get"]
+{{- if eq .Values.workspace.backend "kubernetes" }}
   - apiGroups: [""]
     resources: ["pods/exec", "pods/portforward"]
     verbs: ["create"]
+{{- else if eq .Values.workspace.backend "ssh" }}
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["get", "create"]
+{{- else }}
+  {{- fail "workspace.backend must be kubernetes or ssh" }}
+{{- end }}
   - apiGroups: [""]
     resources: ["persistentvolumeclaims"]
     verbs: ["get", "create"]

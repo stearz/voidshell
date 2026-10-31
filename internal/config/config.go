@@ -50,6 +50,8 @@ type KubernetesConfig struct {
 
 // WorkspaceConfig describes the workspace container.
 type WorkspaceConfig struct {
+	// Backend selects kubernetes (default) or direct ssh transport.
+	Backend string `yaml:"backend"`
 	// Image is the OCI image used for the workspace pod.
 	Image string `yaml:"image"`
 	// ShellCommand starts an independent shell for each SSH shell request.
@@ -73,6 +75,9 @@ func Load(path string) (*Config, error) {
 	}
 
 	applyEnv(&cfg)
+	if cfg.Workspace.Backend != "kubernetes" && cfg.Workspace.Backend != "ssh" {
+		return nil, fmt.Errorf("workspace.backend must be kubernetes or ssh")
+	}
 	return &cfg, nil
 }
 
@@ -90,6 +95,7 @@ func defaults() Config {
 			StorageSize:    "5Gi",
 		},
 		Workspace: WorkspaceConfig{
+			Backend:      "kubernetes",
 			Image:        "ghcr.io/stearz/voidshell-workspace:main",
 			ShellCommand: []string{"/bin/bash", "-l"},
 		},
@@ -100,6 +106,9 @@ func defaults() Config {
 // This lets individual values (e.g. secrets) be injected via Kubernetes
 // Secret env refs without rewriting the whole config file.
 func applyEnv(c *Config) {
+	if v := os.Getenv("VOIDSHELL_WORKSPACE_BACKEND"); v != "" {
+		c.Workspace.Backend = v
+	}
 	if v := os.Getenv("VOIDSHELL_SSH_PORT"); v != "" {
 		if p, err := strconv.Atoi(v); err == nil {
 			c.SSH.Port = p

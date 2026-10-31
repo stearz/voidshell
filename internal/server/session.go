@@ -67,6 +67,10 @@ func (s *Server) handleSession(ctx context.Context, newChan ssh.NewChannel, id w
 		return
 	}
 	defer ch.Close()
+	if backend, ok := s.attacher.(DirectSSHBackend); ok && backend.DirectSSHEnabled() {
+		s.proxySession(ctx, backend, ch, reqs, id, mode)
+		return
+	}
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	var tty bool

@@ -42,6 +42,7 @@ func main() {
 		StorageSize:  cfg.Kubernetes.StorageSize,
 		Image:        cfg.Workspace.Image,
 		ShellCommand: cfg.Workspace.ShellCommand,
+		Backend:      cfg.Workspace.Backend,
 	})
 	if err != nil {
 		log.Error("failed to create Kubernetes manager", "error", err)
@@ -66,6 +67,7 @@ func main() {
 		"ssh_port", cfg.SSH.Port,
 		"guest_namespace", cfg.Kubernetes.GuestNamespace,
 		"shell_image", cfg.Workspace.Image,
+		"workspace_backend", cfg.Workspace.Backend,
 	)
 
 	if err := srv.ListenAndServe(ctx, addr); err != nil {

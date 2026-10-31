@@ -2,6 +2,9 @@
 
 **Status:** Accepted; session startup superseded by [ADR 004](004-independent-sessions-and-workspace-lifecycle.md)
 
+Direct SSH startup and the passwd home `/home/workspace` are specified in
+[ADR 005](005-direct-ssh-backend.md).
+
 **Date:** 2026-05-27
 
 ---

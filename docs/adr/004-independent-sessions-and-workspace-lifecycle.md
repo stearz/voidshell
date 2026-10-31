@@ -2,6 +2,10 @@
 
 ## Decision
 
+This document describes the default `kubernetes` backend.
+[ADR 005](005-direct-ssh-backend.md) adds the optional direct SSH transport
+while retaining the shared workspace lease and storage contracts.
+
 A workspace pod hosts independent Kubernetes `pods/exec` processes for SSH shell,
 command, and SFTP sessions. Its PID 1 is a small shell sleep loop, independent of
 any client. `workspace.shellCommand` configures each shell session, not PID 1;

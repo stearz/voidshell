@@ -127,3 +127,21 @@ func TestLoadMissingFile(t *testing.T) {
 		t.Error("expected error for missing file, got nil")
 	}
 }
+
+func TestWorkspaceBackend(t *testing.T) {
+	for _, backend := range []string{"kubernetes", "ssh", "unknown"} {
+		t.Run(backend, func(t *testing.T) {
+			t.Setenv("VOIDSHELL_WORKSPACE_BACKEND", backend)
+			cfg, err := Load("")
+			if backend == "unknown" {
+				if err == nil {
+					t.Fatal("unknown backend accepted")
+				}
+				return
+			}
+			if err != nil || cfg.Workspace.Backend != backend {
+				t.Fatalf("config=%v err=%v", cfg, err)
+			}
+		})
+	}
+}

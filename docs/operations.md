@@ -422,3 +422,31 @@ The repository's GITHUB_TOKEN needs admin access to both container packages
 for deletion, in addition to the workflow's `packages: write` permission.
 Packages created by this repository's workflows normally grant that access;
 for existing packages verify their Actions access in package settings.
+
+## Direct SSH backend checks
+
+Use `workspace.backend: ssh` with the updated workspace image. Remove idle old
+workspace pods before changing backends; keep PVCs. Review
+[ADR 005](adr/005-direct-ssh-backend.md) for the image and network contracts.
+In SSH mode the proxy needs direct TCP 2222 reachability to pod IPs, guest-namespace
+Secret get/create, and no exec/port-forward API permissions. Confirm your CNI
+enforces the chart's selected workspace ingress; broader additive policies can
+allow additional sources.
+
+Repeat the shell, resize, SFTP/SCP, and forwarding smoke checks above. Check that
+workspace pods run `/usr/local/bin/voidshell-sshd`, become ready on port 2222, and
+have `automountServiceAccountToken: false`. Each pod references one immutable,
+pod-owned `workspace-ssh-*` Secret. Its volume projection must include only
+`host-key` and `authorized_keys`, never `client-key`. The last channel must delete
+the pod; its Secret should subsequently disappear through garbage collection.
+Reconnecting must create a new Secret and host key, preserving only PVC-backed
+home data. Never print private key data while inspecting these resources.
+
+To rotate internal keys, close all workspace channels and recreate the pod. For
+emergency revocation, terminate active proxy transports and the affected pod;
+changing a Secret does not invalidate established SSH connections. A mismatched
+host key or incompatible old pod fails closed and appears in the proxy log.
+An orphan pod after a crash follows the existing manual recovery procedure.
+
+[Backend benchmarks](backend-benchmarks.md) provide the disposable local-cluster
+comparison and the Docker/OpenSSH integration command.

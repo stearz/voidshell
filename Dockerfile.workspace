@@ -14,16 +14,17 @@ RUN apt-get update && apt-get upgrade -y && apt-get install -y --no-install-reco
     procps \
     openssh-client \
     openssh-sftp-server \
+    openssh-server \
     rsync \
     && rm -rf /var/lib/apt/lists/* \
     && rm -f /usr/bin/pebble \
-    && test ! -e /usr/sbin/sshd \
+    && rm -f /etc/ssh/ssh_host_*_key* \
+    && mkdir -p /run/sshd \
     && test -z "$(find /etc/ssh -maxdepth 1 -name 'ssh_host_*_key*' -print -quit)"
 
-# openssh-sftp-server recommends openssh-server, which generates host private
-# keys during installation. SFTP runs over Kubernetes exec; no SSH daemon or
-# image-baked host keys are needed. Keep recommendations disabled and fail the
-# build above if either appears. ca-certificates is explicit for HTTPS tooling.
+# Package installation generates host keys. Remove them in the same layer;
+# the direct backend provisions unique keys for each pod at runtime. No private
+# key is distributed in the image. The default Kubernetes backend runs no daemon.
 
 # Dedicated group + user for owning the Homebrew installation.
 # UID/GID 900 is below the workspace user (UID 1000) so there is no conflict.
@@ -53,8 +54,13 @@ USER root
 # ubuntu:26.04 ships with an "ubuntu" user at UID 1000 — rename it in place.
 RUN usermod -l voidshell ubuntu \
     && usermod -d /home/voidshell -m voidshell \
+    && usermod -d /home/workspace voidshell \
+    && usermod -p '*' voidshell \
     && groupmod -n voidshell ubuntu \
-    && usermod -aG brew voidshell
+    && usermod -aG brew voidshell \
+    && mkdir -p /run/voidshell \
+    && chown 1000:1000 /run/voidshell \
+    && chmod 700 /run/voidshell
 
 # Hand the build user's Homebrew installation to the runtime user. Git rejects
 # repositories owned by another UID, even when group permissions allow writes.
@@ -72,6 +78,8 @@ ENV PATH="/home/linuxbrew/.linuxbrew/bin:/home/linuxbrew/.linuxbrew/sbin:${PATH}
 
 # Show the connecting SSH username in the shell prompt.
 COPY scripts/voidshell-prompt.sh /etc/profile.d/voidshell-prompt.sh
+
+COPY scripts/voidshell-sshd /usr/local/bin/voidshell-sshd
 
 USER voidshell
 WORKDIR /home/workspace

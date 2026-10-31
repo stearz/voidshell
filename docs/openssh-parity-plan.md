@@ -1,7 +1,8 @@
 # SSH compatibility status and remaining work
 
 The execution and lifecycle contract is recorded in
-[ADR 004](adr/004-independent-sessions-and-workspace-lifecycle.md).
+[ADR 004](adr/004-independent-sessions-and-workspace-lifecycle.md) and
+[ADR 005](adr/005-direct-ssh-backend.md).
 
 ## Implemented
 
@@ -13,6 +14,8 @@ The execution and lifecycle contract is recorded in
 | SFTP and modern SCP | Fixed subsystem wrapper discovers OpenSSH `sftp-server` |
 | Legacy SCP and rsync | Remote exec; binaries supplied in the workspace image |
 | Local port forwarding | Kubernetes pod port-forward streams, workspace loopback only |
+| Direct SSH transport | Opt-in per-pod authenticated SSH; shell, transfer, and forwarding bypass the API |
+| SSH signal forwarding | Passed through to OpenSSH in SSH mode; unavailable with Kubernetes exec |
 | Keepalive requests | Replies to `keepalive@openssh.com` |
 | Concurrent sessions | Process-local workspace leases; cleanup after last active channel |
 | Disconnect and setup failure | Cancel API streams and attempt cleanup; retain PVCs |
@@ -25,7 +28,7 @@ The execution and lifecycle contract is recorded in
 - Arbitrary destination forwarding: would broaden the trust boundary beyond the
   user's own workspace.
 - Client environment variables beyond PTY `TERM`: requires an explicit allowlist.
-- SSH signal forwarding: Kubernetes exec does not expose the remote process ID.
+- SSH signals with Kubernetes exec: the API does not expose the remote process ID.
 - Idle TTL, automatic crash recovery, and multi-replica coordination.
 - VS Code Remote SSH compatibility: needs separate end-to-end validation; the
   implemented primitives alone do not establish support.
@@ -38,3 +41,6 @@ and rejected forwarding destinations. Kubernetes transport tests inspect exec
 argv and stream flags and exercise SPDY port-forward data/error streams and
 half-close against a local HTTP server. These do not replace the cluster smoke
 checks in [operations](operations.md).
+
+Run the Docker/OpenSSH integration checks documented in
+[backend benchmarks](backend-benchmarks.md) for direct transport verification.

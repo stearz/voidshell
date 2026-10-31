@@ -25,6 +25,18 @@ spec:
         {{- end }}
       {{- end }}
   egress:
+    {{- if eq .Values.workspace.backend "ssh" }}
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Values.kubernetes.guestNamespace | quote }}
+          podSelector:
+            matchLabels:
+              voidshell.io/backend: ssh
+      ports:
+        - protocol: TCP
+          port: 2222
+    {{- end }}
     # Allow DNS so the pod can resolve github.com and the Kubernetes API hostname.
     - ports:
         - protocol: UDP
@@ -48,4 +60,30 @@ spec:
         - ipBlock:
             cidr: {{ . }}
     {{- end }}
+{{- end }}
+
+{{- if and .Values.networkPolicy.enabled (eq .Values.workspace.backend "ssh") }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "voidshell.fullname" . }}-workspace-ssh
+  namespace: {{ .Values.kubernetes.guestNamespace }}
+spec:
+  podSelector:
+    matchLabels:
+      voidshell.io/backend: ssh
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Release.Namespace | quote }}
+          podSelector:
+            matchLabels:
+              {{- include "voidshell.selectorLabels" . | nindent 14 }}
+      ports:
+        - protocol: TCP
+          port: 2222
 {{- end }}

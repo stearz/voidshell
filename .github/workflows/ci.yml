@@ -28,6 +28,14 @@ jobs:
       - name: Run tests
         run: go test ./...
 
+      - name: Build unprivileged OpenSSH test image
+        run: docker build -f internal/k8s/testdata/Dockerfile.ssh-test -t voidshell-sshd:test .
+
+      - name: Test direct SSH against OpenSSH
+        env:
+          VOIDSHELL_TEST_SSH_IMAGE: voidshell-sshd:test
+        run: go test ./internal/k8s -run TestDirectSSHOpenSSH -timeout 60s
+
       - name: Vet
         run: go vet ./...
 

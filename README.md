@@ -105,9 +105,10 @@ ssh -p 2222 -L 8080:localhost:3000 persist.project@voidshell.example.net
 ```
 
 Keep the shell open while using the application. Forwarding reaches the selected
-workspace's loopback through the Kubernetes API, including servers that do not
+workspace's loopback through the selected backend, including servers that do not
 listen on the pod IP. Accepted destinations are `localhost`, `127.0.0.1`, and
-`::1`; the kubelet determines the loopback IP family used.
+`::1`. Kubernetes mode uses the kubelet's loopback family; SSH mode connects to
+`127.0.0.1` inside the workspace.
 
 There is **no idle grace period**. The last active shell, command, SFTP session,
 or forwarding channel closing deletes the pod. An idle SSH transport or
@@ -188,7 +189,8 @@ networkPolicy:
 The proxy NetworkPolicy blocks private destination ranges by default. Allow the
 Kubernetes API endpoint actually used by your cluster; the example IP is not
 universal. Policy enforcement requires a compatible CNI. Workspace forwarding
-uses the API and does not need direct proxy-to-workspace network access.
+uses the API by default. The optional SSH backend needs direct pod networking;
+see [direct SSH requirements](docs/adr/005-direct-ssh-backend.md).
 
 `nodeSelector` in this chart schedules the **proxy**. Workspace pod scheduling
 follows the cluster defaults; it does not inherit that setting.
@@ -241,9 +243,9 @@ The SSH username selects a workspace; it is not an authentication factor.
 |---|---|
 | Authentication | An empty allow-list denies everyone. A key must match exactly one allowed GitHub account. Expired key-cache entries fail closed if GitHub cannot be reached. |
 | Key revocation | GitHub key removals affect new authentications after the cache TTL, normally 5 minutes. Existing sessions are not automatically revoked. |
-| Kubernetes permissions | The proxy Role is confined to the guest namespace: pods get/list/create/delete, pod logs get, exec/port-forward create, and PVC get/create. Host-key Secrets are mounted as files. |
+| Kubernetes permissions | The proxy Role is confined to the guest namespace: pods get/list/create/delete, pod logs get, and PVC get/create. Kubernetes mode adds exec/port-forward create; SSH mode adds Secret get/create. The listener host key is mounted as a file. |
 | Workspace execution | Processes run as UID 1000 with privilege escalation disabled and all capabilities dropped. `fsGroup: 1000` makes supported home volumes writable. |
-| Network isolation | The chart's NetworkPolicy targets the proxy. Supply your own workspace network policies and review the guest namespace's default ServiceAccount permissions and token mounting. |
+| Network isolation | The chart protects proxy ingress/egress and, in SSH mode, workspace SSH ingress. Workspace API tokens are not mounted. Supply workspace egress policies and review other additive network policies. |
 | Resource control | Chart resource requests and limits apply to the proxy. Use namespace ResourceQuota and LimitRange policies to constrain workspace CPU, memory, storage, and object counts. |
 | Data retention | PVCs are never automatically deleted, including after removing a user. Plan backups, inventory, and deliberate cleanup. |
 | Shutdown and recovery | Graceful shutdown attempts pod cleanup. Crashes can leave orphaned pods; operators must inspect and remove them. |
@@ -258,9 +260,10 @@ and [security decisions](docs/security-decisions.md) for accepted limitations.
 
 ### Current limits
 
-Remote forwarding (`ssh -R`), arbitrary forwarding destinations, SSH signal
-forwarding, agent forwarding, X11 forwarding, and client environment variables
-beyond PTY `TERM` are unsupported. VS Code Remote SSH compatibility has not been
+Remote forwarding (`ssh -R`), arbitrary forwarding destinations,
+agent forwarding, X11 forwarding, and client environment variables
+beyond PTY `TERM` are unsupported. Signal forwarding is available only with the
+SSH backend. VS Code Remote SSH compatibility has not been
 validated. There is no management UI, automatic orphan cleanup, idle TTL, or
 multi-replica coordination. See [SSH compatibility](docs/openssh-parity-plan.md).
 
@@ -289,12 +292,37 @@ environment variables then override individual fields.
 | `VOIDSHELL_K8S_GUEST_NAMESPACE` | `kubernetes.guestNamespace` | `voidshell-workspaces` (chart: `voidshell-guest`) |
 | `VOIDSHELL_K8S_STORAGE_CLASS` | `kubernetes.storageClass` | Empty, uses cluster default |
 | `VOIDSHELL_K8S_STORAGE_SIZE` | `kubernetes.storageSize` | `5Gi` |
+| `VOIDSHELL_WORKSPACE_BACKEND` | `workspace.backend` | `kubernetes`; optionally `ssh` |
 | `VOIDSHELL_WORKSPACE_IMAGE` | `workspace.image` | `ghcr.io/stearz/voidshell-workspace:main` |
 | `VOIDSHELL_WORKSPACE_SHELL_COMMAND` | `workspace.shellCommand` | `/bin/bash,-l`; comma-separated override |
 
 The binary uses in-cluster Kubernetes credentials, falling back to the default
 kubeconfig for local development. The Helm deployment reads the host key from a
-mounted file and needs no Secret-read API permission.
+mounted file. Only the direct SSH backend needs Secret get/create permission
+in the guest namespace.
+
+## Direct SSH backend
+
+Set `workspace.backend: ssh` in Helm values or binary YAML (environment override:
+`VOIDSHELL_WORKSPACE_BACKEND=ssh`). Use a workspace image built from this revision;
+older images have no SSH startup script. Kubernetes remains the default.
+
+SSH mode routes shell, SFTP/SCP, and local-forwarding data directly to the selected
+pod's SSH daemon on TCP 2222. The API handles lifecycle and per-pod credentials.
+The proxy pins a unique host key and authenticates with a separate key that is
+never mounted into the workspace. Keys rotate when the pod is recreated; Secrets
+are garbage-collected with it. The chart supplies the necessary RBAC and selected
+network rules; your CNI must enforce NetworkPolicy and route proxy-to-pod traffic.
+Inspect and remove old workspace pods when switching modes, preserving PVCs.
+
+The official daemon runs as UID 1000 with no capabilities. Its passwd home is
+`/home/workspace`, and its passwd shell handles shell/exec requests;
+`workspace.shellCommand` configures only Kubernetes mode. A direct session channel
+holds a workspace lease from channel open until close. Unknown environment,
+agent, X11, and remote-forwarding requests remain rejected.
+
+See [the image, security, and networking contract](docs/adr/005-direct-ssh-backend.md)
+and [benchmark procedure and results](docs/backend-benchmarks.md).
 
 ## Customize the workspace image
 
@@ -312,7 +340,8 @@ Publish your image to a registry your cluster can access, then set
 image-pull access in the guest namespace; the chart's `imagePullSecrets` setting
 applies to the proxy only.
 
-Custom images need `/bin/sh`, `sleep`, `env`, and the configured shell. The proxy
+For the default Kubernetes backend, custom images need `/bin/sh`, `sleep`, `env`,
+and the configured shell. The proxy
 runs a keepalive process as PID 1 and starts each session through Kubernetes
 exec; custom image entrypoints are bypassed. An empty `shellCommand` falls back
 to `/bin/bash -l`. SFTP needs OpenSSH `sftp-server` at a supported path; legacy

@@ -1,0 +1,6 @@
+FROM ubuntu:26.04
+RUN apt-get update && apt-get install -y --no-install-recommends openssh-server python3 && rm -f /etc/ssh/ssh_host_* && mkdir -p /run/sshd && usermod -l voidshell -d /home/workspace -s /bin/bash -p '*' ubuntu && mkdir -p /home/workspace /run/voidshell && chown 1000:1000 /home/workspace /run/voidshell && chmod 700 /run/voidshell
+COPY scripts/voidshell-sshd /usr/local/bin/voidshell-sshd
+USER 1000:1000
+WORKDIR /home/workspace
+ENTRYPOINT ["/usr/local/bin/voidshell-sshd"]

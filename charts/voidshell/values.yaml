@@ -57,6 +57,8 @@ kubernetes:
 
 # Workspace container settings.
 workspace:
+  # kubernetes keeps data on the Exec API; ssh uses direct pod networking.
+  backend: kubernetes
   # OCI image used for workspace pods. Defaults to the voidshell workspace image
   # which has Homebrew pre-installed. Use any other image (e.g. ubuntu:26.04) for
   # a minimal shell without a package manager.
