@@ -361,6 +361,67 @@ func TestDirectSSHOpenSSH(t *testing.T) {
 		close(start)
 		wg.Wait()
 	})
+	t.Run("forward output EOF preserves input", func(t *testing.T) {
+		docker("exec", "-d", container, "python3", "-c", `import pathlib,socket
+s=socket.socket()
+s.bind(("127.0.0.1",8081))
+s.listen(1)
+pathlib.Path("/home/workspace/half-close-ready").touch()
+c,_=s.accept()
+c.sendall(b"greeting")
+c.shutdown(socket.SHUT_WR)
+data=bytearray()
+while True:
+ chunk=c.recv(65536)
+ if not chunk: break
+ data.extend(chunk)
+pathlib.Path("/home/workspace/half-close-input.tmp").write_bytes(data)
+pathlib.Path("/home/workspace/half-close-input.tmp").rename("/home/workspace/half-close-input")
+c.close()
+s.close()`)
+		docker("exec", container, "python3", "-c", `import pathlib,time
+for _ in range(100):
+ if pathlib.Path("/home/workspace/half-close-ready").exists(): break
+ time.sleep(.05)
+else: raise RuntimeError("half-close service not ready")`)
+		conn, err := client.Dial("tcp", "127.0.0.1:8081")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer conn.Close()
+		type result struct {
+			data []byte
+			err  error
+		}
+		output := make(chan result, 1)
+		go func() { data, err := io.ReadAll(conn); output <- result{data, err} }()
+		select {
+		case got := <-output:
+			if got.err != nil || string(got.data) != "greeting" {
+				t.Fatalf("forwarded output=%q err=%v", got.data, got.err)
+			}
+		case <-time.After(2 * time.Second):
+			t.Fatal("forwarded output EOF withheld")
+		}
+		payload := "input after output EOF"
+		if n, err := io.WriteString(conn, payload); err != nil || n != len(payload) {
+			t.Fatalf("input after output EOF: wrote %d bytes, err=%v", n, err)
+		}
+		half, ok := conn.(interface{ CloseWrite() error })
+		if !ok {
+			t.Fatal("forward has no input half-close")
+		}
+		if err := half.CloseWrite(); err != nil {
+			t.Fatal(err)
+		}
+		docker("exec", container, "python3", "-c", `import pathlib,time
+p=pathlib.Path("/home/workspace/half-close-input")
+for _ in range(100):
+ if p.exists(): break
+ time.sleep(.05)
+else: raise RuntimeError("forwarded input never reached EOF")
+assert p.read_bytes()==b"input after output EOF",p.read_bytes()`)
+	})
 	t.Run("loopback forwarding", func(t *testing.T) {
 		docker("exec", "-d", container, "python3", "-m", "http.server", "8080", "--bind", "127.0.0.1")
 		docker("exec", container, "python3", "-c", `import socket,time
