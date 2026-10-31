@@ -1,6 +1,7 @@
 name: CI
 
 on:
+  workflow_dispatch:
   push:
     branches: [main]
   pull_request:
@@ -216,7 +217,7 @@ jobs:
           push: ${{ github.event_name != 'pull_request' }}
           tags: |
             ghcr.io/${{ github.repository }}:${{ github.sha }}
-            ghcr.io/${{ github.repository }}:main
+            ghcr.io/${{ github.repository }}:${{ github.event_name == 'workflow_dispatch' && format('dev-{0}', github.sha) || 'main' }}
           # Layer cache stored in GitHub Actions cache — correctness does not
           # depend on the cache being present.
           cache-from: type=gha
@@ -231,6 +232,24 @@ jobs:
           push: ${{ github.event_name != 'pull_request' }}
           tags: |
             ghcr.io/${{ github.repository }}-workspace:${{ github.sha }}
-            ghcr.io/${{ github.repository }}-workspace:main
+            ghcr.io/${{ github.repository }}-workspace:${{ github.event_name == 'workflow_dispatch' && format('dev-{0}', github.sha) || 'main' }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+      - name: Set up Helm for development chart publication
+        if: github.event_name == 'workflow_dispatch'
+        uses: azure/setup-helm@v5
+        with:
+          version: "4.3.0"
+
+      - name: Publish revision-pinned development chart
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          printf '%s' "$GHCR_TOKEN" | helm registry login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+          chart_base=$(awk '$1 == "version:" { print $2 }' charts/voidshell/Chart.yaml)
+          chart_version="${chart_base}-dev.g${GITHUB_SHA:0:12}"
+          helm package charts/voidshell --version "$chart_version" --app-version "$GITHUB_SHA" --destination /tmp
+          helm push "/tmp/voidshell-${chart_version}.tgz" "oci://ghcr.io/${GITHUB_REPOSITORY_OWNER}/charts"
+          printf 'Development chart: `%s`\nImages: `%s`\n' "$chart_version" "$GITHUB_SHA" >> "$GITHUB_STEP_SUMMARY"
