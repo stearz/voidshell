@@ -450,3 +450,14 @@ An orphan pod after a crash follows the existing manual recovery procedure.
 
 [Backend benchmarks](backend-benchmarks.md) provide the disposable local-cluster
 comparison and the Docker/OpenSSH integration command.
+
+## Publish a development revision
+
+The CI workflow supports an explicit `workflow_dispatch` on a feature branch.
+It runs tests, Helm lint, and both blocking image scans before publishing proxy
+and workspace images with the full commit-SHA tag plus `dev-<SHA>`. It also
+publishes a chart named `<chart-version>-dev.g<first-12-SHA-characters>`, with
+`appVersion` set to the full SHA. Dispatch builds never move the `main` image tags.
+Use the workflow's run summary for the exact chart version and pin both images
+to that same full SHA in the GitOps repository. Pull-request events still publish
+no artifacts. A development rollout does not require merging the feature PR.
