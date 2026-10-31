@@ -11,6 +11,8 @@ RUN apt-get update && apt-get upgrade -y && apt-get install -y --no-install-reco
     curl \
     file \
     git \
+    ncurses-bin \
+    ncurses-term \
     procps \
     openssh-client \
     openssh-sftp-server \
@@ -25,6 +27,14 @@ RUN apt-get update && apt-get upgrade -y && apt-get install -y --no-install-reco
 # Package installation generates host keys. Remove them in the same layer;
 # the direct backend provisions unique keys for each pod at runtime. No private
 # key is distributed in the image. The default Kubernetes backend runs no daemon.
+
+# Ghostty advertises xterm-ghostty; Ubuntu's extended database uses ghostty.
+# Compile a compatibility name against the packaged capabilities for both system
+# and Homebrew ncurses applications. Fail the build if it cannot be resolved.
+COPY scripts/terminfo/xterm-ghostty.terminfo /tmp/xterm-ghostty.terminfo
+RUN tic -x -o /usr/share/terminfo /tmp/xterm-ghostty.terminfo \
+    && rm /tmp/xterm-ghostty.terminfo \
+    && infocmp -x xterm-ghostty > /dev/null
 
 # Dedicated group + user for owning the Homebrew installation.
 # UID/GID 900 is below the workspace user (UID 1000) so there is no conflict.

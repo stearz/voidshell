@@ -126,6 +126,7 @@ jobs:
           category: voidshell
 
       - name: Build workspace image for scanning
+        id: build-workspace
         if: always()
         uses: docker/build-push-action@v7
         with:
@@ -135,6 +136,10 @@ jobs:
           load: true
           tags: voidshell-workspace:scan
           cache-from: type=gha
+
+      - name: Test Homebrew htop with Ghostty terminfo
+        if: steps.build-workspace.outcome == 'success'
+        run: ./scripts/test-workspace-terminal.sh voidshell-workspace:scan
 
       - name: Scan workspace image
         id: scan-workspace
