@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.8.0](https://github.com/stearz/voidshell/compare/v0.7.0...v0.8.0) (2026-10-31)
+
+
+### Features
+
+* add optional direct SSH workspace backend ([bc49abc](https://github.com/stearz/voidshell/commit/bc49abca88a331457da5b62f28ed8d98df0d01bd))
+
+
+### Bug Fixes
+
+* drain forwarded input before closing backend SSH transport ([398a787](https://github.com/stearz/voidshell/commit/398a7875739d5adb23ac75321b0d1d3350da4941))
+* preserve both halves of direct SSH forwarding ([f16764d](https://github.com/stearz/voidshell/commit/f16764d728185c304df6a5e270bee8878793102b))
+* preserve SSH output EOF and serialize dev publication ([a437aa2](https://github.com/stearz/voidshell/commit/a437aa21fdcfcffbd8dcb47c1382d6d7e7c9657c))
+* resolve Ghostty terminfo for Homebrew terminal apps ([564bcfa](https://github.com/stearz/voidshell/commit/564bcfabdf144a8758c5c8fc46a63908f449bd2b))
+
 ## [0.7.0](https://github.com/stearz/voidshell/compare/v0.6.0...v0.7.0) (2026-10-30)
 
 
