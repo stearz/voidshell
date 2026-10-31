@@ -67,6 +67,14 @@ func (s *Server) proxySession(ctx context.Context, backend DirectSSHBackend, ch 
 	output.Add(2)
 	go func() { defer output.Done(); io.Copy(ch, remote) }()
 	go func() { defer output.Done(); io.Copy(ch.Stderr(), remote.Stderr()) }()
+	outputDone := make(chan struct{})
+	go func() {
+		output.Wait()
+		// Output EOF is independent of process exit. The backend may still be
+		// reading stdin, which must remain open after both output streams end.
+		ch.CloseWrite()
+		close(outputDone)
+	}()
 	go func() {
 		started, pty := false, false
 		for req := range pending {
@@ -105,7 +113,7 @@ func (s *Server) proxySession(ctx context.Context, backend DirectSSHBackend, ch 
 			req.Reply(false, nil)
 		}
 	}
-	output.Wait()
+	<-outputDone
 	release()
 	if exit != nil {
 		ch.SendRequest(exit.Type, false, exit.Payload)

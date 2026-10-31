@@ -176,6 +176,76 @@ func TestDirectSSHOpenSSH(t *testing.T) {
 			t.Fatalf("exit=%v stdout=%q stderr=%q", err, stdout.String(), stderr.String())
 		}
 	})
+	t.Run("output EOF before input EOF", func(t *testing.T) {
+		session, err := client.NewSession()
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer session.Close()
+		stdin, err := session.StdinPipe()
+		if err != nil {
+			t.Fatal(err)
+		}
+		stdout, err := session.StdoutPipe()
+		if err != nil {
+			t.Fatal(err)
+		}
+		stderr, err := session.StderrPipe()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := session.Start("printf marker; printf diagnostic >&2; exec 1>&- 2>&-; cat >/home/workspace/eof-input"); err != nil {
+			t.Fatal(err)
+		}
+		type result struct {
+			data []byte
+			err  error
+		}
+		outDone, errDone := make(chan result, 1), make(chan result, 1)
+		go func() { data, err := io.ReadAll(stdout); outDone <- result{data, err} }()
+		go func() { data, err := io.ReadAll(stderr); errDone <- result{data, err} }()
+		for _, stream := range []struct {
+			name, want string
+			done       chan result
+		}{
+			{"stdout", "marker", outDone}, {"stderr", "diagnostic", errDone},
+		} {
+			select {
+			case got := <-stream.done:
+				if got.err != nil || string(got.data) != stream.want {
+					t.Fatalf("%s=%q err=%v", stream.name, got.data, got.err)
+				}
+			case <-time.After(2 * time.Second):
+				t.Fatalf("%s EOF withheld while backend still reads stdin", stream.name)
+			}
+		}
+		// Receiving output EOF must leave the client-to-backend half open.
+		if _, err := io.WriteString(stdin, "after-eof"); err != nil {
+			t.Fatal(err)
+		}
+		if err := stdin.Close(); err != nil {
+			t.Fatal(err)
+		}
+		waited := make(chan error, 1)
+		go func() { waited <- session.Wait() }()
+		select {
+		case err := <-waited:
+			if err != nil {
+				t.Fatal(err)
+			}
+		case <-time.After(2 * time.Second):
+			t.Fatal("command did not exit after input EOF")
+		}
+		check, err := client.NewSession()
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer check.Close()
+		data, err := check.Output("cat /home/workspace/eof-input")
+		if err != nil || string(data) != "after-eof" {
+			t.Fatalf("input after output EOF=%q err=%v", data, err)
+		}
+	})
 	t.Run("image command path", func(t *testing.T) {
 		session, err := client.NewSession()
 		if err != nil {

@@ -193,7 +193,8 @@ jobs:
       contents: read
       packages: write
     concurrency:
-      group: ${{ github.event_name == 'push' && 'ghcr-images' || format('pr-images-{0}', github.event.pull_request.number) }}
+      # Every publisher (main or dispatch) shares the cleanup/release lock.
+      group: ${{ github.event_name == 'pull_request' && format('pr-images-{0}', github.event.pull_request.number) || 'ghcr-images' }}
       cancel-in-progress: false
     steps:
       - uses: actions/checkout@v7
