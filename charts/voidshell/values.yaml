@@ -57,6 +57,8 @@ kubernetes:
 
 # Workspace container settings.
 workspace:
+  # Grace period after the last active channel. Use 0s for immediate cleanup.
+  idleTimeout: "30m"
   # kubernetes keeps data on the Exec API; ssh uses direct pod networking.
   backend: kubernetes
   # OCI image used for workspace pods. Defaults to the voidshell workspace image

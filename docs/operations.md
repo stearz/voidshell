@@ -173,7 +173,9 @@ helm upgrade --install voidshell oci://ghcr.io/stearz/charts/voidshell \
 ```text
 first active channel → CREATE pod → wait for container readiness → exec/forward
 additional channels  → independent processes/streams in the same pod
-last channel closes  → DELETE pod → wait for deletion
+last channel closes  → start idle timer (30m by default)
+new channel arrives  → cancel timer → reuse pod
+idle timer expires   → DELETE pod → wait for deletion
 ```
 
 `devbox` uses `emptyDir` without a PVC; `persist.devbox` creates/reuses the stable
@@ -183,7 +185,11 @@ home survives deletion. Installed Homebrew packages are outside the home volume.
 
 An idle SSH transport does not retain a pod. Forward-only connections provision
 on the first incoming forwarding channel and release on its completion. Keep a
-shell session open while using a development server. There is no idle TTL.
+shell session open to keep a development server beyond the idle window.
+`workspace.idleTimeout` defaults to `30m`; set `0s` for immediate cleanup or
+override it with `VOIDSHELL_WORKSPACE_IDLE_TIMEOUT`. New channels cancel cleanup;
+active channels never expire merely because of their age. Reconnection followed
+by disconnect starts a fresh idle window. PVCs are never removed by this timer.
 
 Run exactly one proxy instance per guest namespace. The Helm chart enforces a
 single replica with `Recreate` upgrades and allows 45 seconds for graceful
@@ -266,8 +272,8 @@ ssh -p 2222 persist.devbox@<voidshell-service-ip>
 # Expected: hello
 ```
 
-The persistent pod is deleted after each session, while
-`home-vs-stearz-devbox-xxxxxx` remains Bound.
+After the last channel closes, wait for the configured idle timeout and confirm
+the persistent pod is deleted, while `home-vs-stearz-devbox-xxxxxx` remains Bound.
 
 ### 3. Test: unknown key → connection rejected
 
@@ -339,7 +345,11 @@ ssh -p 2222 -L 8080:localhost:3000 persist.devbox@<host>
 A loopback-only server must be reachable. Forwarding to an arbitrary cluster IP
 or hostname must be rejected. Close a transfer or forwarding connection while a
 shell remains active: the shell and pod must remain usable. Close the final
-channel: the pod must be deleted.
+channel: the pod must remain until the idle timeout expires, then be deleted.
+Reconnect before expiry and confirm the pod UID and background server survive;
+close all channels again and verify cleanup occurs after a full new idle window.
+Use a short timeout such as `5s` in a test deployment for these checks. Repeat
+with ephemeral and persistent selectors; only the persistent home survives deletion.
 
 ### 9. Test: failed setup and disconnect
 
@@ -437,9 +447,11 @@ Repeat the shell, resize, SFTP/SCP, and forwarding smoke checks above. Check tha
 workspace pods run `/usr/local/bin/voidshell-sshd`, become ready on port 2222, and
 have `automountServiceAccountToken: false`. Each pod references one immutable,
 pod-owned `workspace-ssh-*` Secret. Its volume projection must include only
-`host-key` and `authorized_keys`, never `client-key`. The last channel must delete
-the pod; its Secret should subsequently disappear through garbage collection.
-Reconnecting must create a new Secret and host key, preserving only PVC-backed
+`host-key` and `authorized_keys`, never `client-key`. After the last channel
+closes and the idle timeout expires, the pod must be deleted; its Secret should
+subsequently disappear through garbage collection.
+Reconnecting before expiry must retain the pod and keys. After expiry,
+reconnecting must create a new Secret and host key, preserving only PVC-backed
 home data. Never print private key data while inspecting these resources.
 
 To rotate internal keys, close all workspace channels and recreate the pod. For

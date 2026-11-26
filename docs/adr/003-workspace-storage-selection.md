@@ -36,8 +36,8 @@ identity. Both examples above therefore use `project` as the workspace name,
 but only the second creates and mounts a PVC.
 
 An ephemeral workspace mounts an `emptyDir` at `/home/workspace` and creates no
-PVC. Its contents disappear when voidshell deletes the workspace pod at session
-end. A persistent workspace retains the existing stable PVC naming model, keyed
+PVC. Its contents disappear when voidshell deletes the workspace pod after the idle
+grace period (see [ADR 004](004-independent-sessions-and-workspace-lifecycle.md)). A persistent workspace retains the existing stable PVC naming model, keyed
 by the authenticated GitHub username and logical workspace name.
 
 `persist.` without a following workspace name remains an ordinary ephemeral

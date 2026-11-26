@@ -60,7 +60,8 @@ func main() {
 		os.Exit(1)
 	}
 
-	srv := server.New(hostKey, authenticator, k8sMgr, k8sMgr, log)
+	idleTimeout, _ := time.ParseDuration(cfg.Workspace.IdleTimeout) // Validated by config.Load.
+	srv := server.New(hostKey, authenticator, k8sMgr, k8sMgr, log, server.WithIdleTimeout(idleTimeout))
 
 	addr := fmt.Sprintf(":%d", cfg.SSH.Port)
 	log.Info("voidshell starting",
@@ -68,6 +69,7 @@ func main() {
 		"guest_namespace", cfg.Kubernetes.GuestNamespace,
 		"shell_image", cfg.Workspace.Image,
 		"workspace_backend", cfg.Workspace.Backend,
+		"workspace_idle_timeout", idleTimeout,
 	)
 
 	if err := srv.ListenAndServe(ctx, addr); err != nil {

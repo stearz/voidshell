@@ -5,6 +5,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 
 	"gopkg.in/yaml.v3"
 )
@@ -50,6 +51,8 @@ type KubernetesConfig struct {
 
 // WorkspaceConfig describes the workspace container.
 type WorkspaceConfig struct {
+	// IdleTimeout is the grace period after the last channel; zero cleans up immediately.
+	IdleTimeout string `yaml:"idleTimeout"`
 	// Backend selects kubernetes (default) or direct ssh transport.
 	Backend string `yaml:"backend"`
 	// Image is the OCI image used for the workspace pod.
@@ -78,6 +81,9 @@ func Load(path string) (*Config, error) {
 	if cfg.Workspace.Backend != "kubernetes" && cfg.Workspace.Backend != "ssh" {
 		return nil, fmt.Errorf("workspace.backend must be kubernetes or ssh")
 	}
+	if timeout, err := time.ParseDuration(cfg.Workspace.IdleTimeout); err != nil || timeout < 0 {
+		return nil, fmt.Errorf("workspace.idleTimeout must be a non-negative duration")
+	}
 	return &cfg, nil
 }
 
@@ -96,6 +102,7 @@ func defaults() Config {
 		},
 		Workspace: WorkspaceConfig{
 			Backend:      "kubernetes",
+			IdleTimeout:  "30m",
 			Image:        "ghcr.io/stearz/voidshell-workspace:main",
 			ShellCommand: []string{"/bin/bash", "-l"},
 		},
@@ -106,6 +113,9 @@ func defaults() Config {
 // This lets individual values (e.g. secrets) be injected via Kubernetes
 // Secret env refs without rewriting the whole config file.
 func applyEnv(c *Config) {
+	if v := os.Getenv("VOIDSHELL_WORKSPACE_IDLE_TIMEOUT"); v != "" {
+		c.Workspace.IdleTimeout = v
+	}
 	if v := os.Getenv("VOIDSHELL_WORKSPACE_BACKEND"); v != "" {
 		c.Workspace.Backend = v
 	}

@@ -11,6 +11,9 @@ func TestLoadDefaults(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load(\"\") error: %v", err)
 	}
+	if cfg.Workspace.IdleTimeout != "30m" {
+		t.Fatalf("default idle timeout = %q", cfg.Workspace.IdleTimeout)
+	}
 	if cfg.SSH.Port != 2222 {
 		t.Errorf("default SSH port: got %d, want 2222", cfg.SSH.Port)
 	}
@@ -144,4 +147,38 @@ func TestWorkspaceBackend(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestWorkspaceIdleTimeout(t *testing.T) {
+	for _, value := range []string{"0s", "30m", "24h", "-1s", "invalid", "999999999999h"} {
+		t.Run(value, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "config.yaml")
+			if err := os.WriteFile(path, []byte("workspace:\n  idleTimeout: "+value+"\n"), 0600); err != nil {
+				t.Fatal(err)
+			}
+			cfg, err := Load(path)
+			valid := value == "0s" || value == "30m" || value == "24h"
+			if valid && (err != nil || cfg.Workspace.IdleTimeout != value) {
+				t.Fatalf("load=%v, %v", cfg, err)
+			}
+			if !valid && err == nil {
+				t.Fatal("accepted invalid duration")
+			}
+		})
+	}
+	t.Run("environment overrides file", func(t *testing.T) {
+		path := filepath.Join(t.TempDir(), "config.yaml")
+		if err := os.WriteFile(path, []byte("workspace:\n  idleTimeout: 24h\n"), 0600); err != nil {
+			t.Fatal(err)
+		}
+		t.Setenv("VOIDSHELL_WORKSPACE_IDLE_TIMEOUT", "30m")
+		cfg, err := Load(path)
+		if err != nil || cfg.Workspace.IdleTimeout != "30m" {
+			t.Fatalf("load=%v, %v", cfg, err)
+		}
+		t.Setenv("VOIDSHELL_WORKSPACE_IDLE_TIMEOUT", "-1m")
+		if _, err := Load(path); err == nil {
+			t.Fatal("accepted negative environment override")
+		}
+	})
 }
