@@ -160,6 +160,59 @@ func TestDirectSSHOpenSSH(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer client.Close()
+
+	// Match desktop clients that start a background server, finish the command,
+	// then forward to it over a separate SSH connection without a keeper session.
+	t.Run("background server survives gap before tunnel", func(t *testing.T) {
+		launch, err := client.NewSession()
+		if err != nil {
+			t.Fatal(err)
+		}
+		out, err := launch.CombinedOutput("nohup python3 -m http.server 38991 --bind 127.0.0.1 >/tmp/idle-http.log 2>&1 </dev/null & echo $! >/tmp/idle-http.pid")
+		launch.Close()
+		if err != nil {
+			t.Fatalf("launch: %v: %s", err, out)
+		}
+		docker(t, "exec", container, "python3", "-c", `import socket,time
+for attempt in range(100):
+ try:
+  socket.create_connection(("127.0.0.1",38991),timeout=.1).close()
+  break
+ except OSError: time.sleep(.05)
+else: raise RuntimeError("background HTTP server not ready")`)
+		tunnel, err := ssh.Dial("tcp", ln.Addr().String(), &ssh.ClientConfig{User: "dev", Auth: []ssh.AuthMethod{ssh.PublicKeys(signer)}, HostKeyCallback: ssh.FixedHostKey(signer.PublicKey()), Timeout: 5 * time.Second})
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer tunnel.Close()
+		var conn net.Conn
+		for deadline := time.Now().Add(5 * time.Second); time.Now().Before(deadline); {
+			conn, err = tunnel.Dial("tcp", "127.0.0.1:38991")
+			if err == nil {
+				break
+			}
+			time.Sleep(50 * time.Millisecond)
+		}
+		if err != nil {
+			t.Fatalf("background server forwarding: %v", err)
+		}
+		defer conn.Close()
+		if _, err := io.WriteString(conn, "GET / HTTP/1.0\r\nHost: localhost\r\n\r\n"); err != nil {
+			t.Fatal(err)
+		}
+		response, err := io.ReadAll(conn)
+		if err != nil || !bytes.Contains(response, []byte("200 OK")) {
+			t.Fatalf("HTTP response=%q, error=%v", response, err)
+		}
+		stop, err := client.NewSession()
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer stop.Close()
+		if err := stop.Run("kill $(cat /tmp/idle-http.pid)"); err != nil {
+			t.Fatal(err)
+		}
+	})
 	// Keep a lease across the subtests, matching overlapping shell/file transfers.
 	keeper, err := client.NewSession()
 	if err != nil {

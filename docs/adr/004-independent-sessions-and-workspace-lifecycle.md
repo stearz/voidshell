@@ -18,18 +18,31 @@ waits for the workspace container to become ready. Creation and deletion are
 serialized per workspace, including across separate SSH connections. Unrelated
 workspaces provision independently.
 
-The last lease release deletes the pod and waits for deletion to finish. There
-is no idle TTL. An open SSH transport without active channels does not retain a
-pod. Forward-only connections provision lazily when traffic first opens a
-forwarding channel; an idle `ssh -N -L ...` does not provision a pod. Keep a shell
-or another session open when a development server should remain available.
+The last lease release starts a process-local idle timer. `workspace.idleTimeout`
+defaults to `30m`, accepts non-negative Go durations, and can be overridden with
+`VOIDSHELL_WORKSPACE_IDLE_TIMEOUT`. `0s` retains immediate cleanup. A new active
+channel cancels the timer; the next last release starts a full new idle window.
+The pod and background processes survive gaps between commands and forwarded
+requests, including T3 Code's separate backend launch and tunnel connections.
+Active workspaces have no maximum lifetime. Expiry and acquisition use the same
+per-workspace gate: a stale timer cannot delete a resumed workspace, and a new
+acquisition waits for any deletion already in progress.
+
+An open SSH transport without active channels does not reset the idle timer.
+Forward-only connections provision lazily when traffic first opens a forwarding
+channel; an idle `ssh -N -L ...` does not provision a pod. Keep an active channel
+open if a development server must remain available beyond the idle window.
+Graceful proxy shutdown bypasses idle timers, cleans retained pods in parallel,
+and waits for cleanup callbacks. Failed setup still cleans partial pods
+immediately. Timers are not persisted: abrupt crashes can leave orphaned pods.
 
 A completed command sends its exit status after releasing its lease. Remote
 process exit codes are preserved, while infrastructure failures return status 1
 with a diagnostic on stderr. Failed setup also attempts pod cleanup. PVCs are
 never deleted. Channel and transport closure cancel the corresponding API
 streams; cancellation does not guarantee termination of background processes
-inside a pod retained by another session. Final pod deletion terminates them.
+inside a pod retained by another session or the idle grace period. Final pod
+deletion terminates them.
 
 The home volume is mounted at `/home/workspace`, which is also `HOME` and the
 process working directory. Pod `fsGroup: 1000` makes supported volumes writable
@@ -71,8 +84,9 @@ sessions are interrupted by an upgrade. PVC data remains intact.
 
 Multiple terminals and file transfers can share one workspace without sharing a
 shell process or deleting each other's pod. Ephemeral data remains available
-while at least one channel is active, and is discarded when the last closes.
+while channels are active and during the idle grace period, and is discarded
+when the pod is deleted.
 Persistent workspaces keep only the PVC-backed home across pod lifetimes.
 
-A future idle TTL or multi-replica deployment requires an explicit lifecycle
-change; it cannot be implemented by independently retaining pods per connection.
+Multi-replica deployment or recovery of idle deadlines across proxy restarts
+requires a separate coordination and lifecycle design.

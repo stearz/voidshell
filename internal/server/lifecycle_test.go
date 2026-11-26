@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"sync"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/stearz/voidshell/internal/workspace"
@@ -119,6 +120,7 @@ func TestDisconnectDuringSetupCleansPartialPod(t *testing.T) {
 		return ctx.Err()
 	}}
 	s := leaseServer(l)
+	s.idleTimeout = 30 * time.Minute
 	ctx, cancel := context.WithCancel(context.Background())
 	result := make(chan error, 1)
 	go func() {
@@ -183,4 +185,167 @@ func TestReconnectWaitsForDeletion(t *testing.T) {
 	second := await(t, reacquired)
 	second()
 	other()
+}
+
+func (l *controlledLifecycle) deleteCount() int {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.deletes
+}
+func (l *controlledLifecycle) ensureCount() int {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.ensures
+}
+func (s *Server) workspaceCount() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return len(s.workspaces)
+}
+
+// Virtual time exercises production-length idle windows without wall-clock sleeps.
+func TestIdleTimeoutRetainsAndResetsWorkspace(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		l := &controlledLifecycle{}
+		s := leaseServer(l)
+		s.idleTimeout = 30 * time.Minute
+		id := workspace.New("alice", "dev")
+		acquire := func() func() {
+			t.Helper()
+			release, err := s.acquireWorkspace(context.Background(), id, workspace.StorageEphemeral)
+			if err != nil {
+				t.Fatal(err)
+			}
+			return release
+		}
+		first, second := acquire(), acquire()
+		first()
+		time.Sleep(time.Hour)
+		synctest.Wait()
+		if l.deleteCount() != 0 {
+			t.Fatal("deleted while another channel was active")
+		}
+		second()
+		second() // Duplicate release must not shorten the idle window.
+		time.Sleep(29 * time.Minute)
+		synctest.Wait()
+		if l.deleteCount() != 0 || s.workspaceCount() != 1 {
+			t.Fatal("workspace not retained")
+		}
+		resumed := acquire()
+		time.Sleep(2 * time.Minute) // Cross the original deadline while active.
+		synctest.Wait()
+		if l.deleteCount() != 0 {
+			t.Fatal("old deadline deleted resumed workspace")
+		}
+		resumed()
+		time.Sleep(29 * time.Minute)
+		synctest.Wait()
+		if l.deleteCount() != 0 {
+			t.Fatal("idle deadline was not reset")
+		}
+		time.Sleep(time.Minute)
+		synctest.Wait()
+		if l.deleteCount() != 1 || s.workspaceCount() != 0 {
+			t.Fatal("expired workspace not cleaned exactly once")
+		}
+		s.cleanupIdleWorkspaces()
+	})
+}
+
+func TestIdleTimeoutIsPerWorkspaceAndStorageMode(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		l := &controlledLifecycle{}
+		s := leaseServer(l)
+		s.idleTimeout = 30 * time.Minute
+		id := workspace.New("alice", "dev")
+		for _, mode := range []workspace.StorageMode{workspace.StorageEphemeral, workspace.StoragePersistent} {
+			release, err := s.acquireWorkspace(context.Background(), id, mode)
+			if err != nil {
+				t.Fatal(err)
+			}
+			release()
+			time.Sleep(15 * time.Minute)
+		}
+		synctest.Wait()
+		if l.deleteCount() != 1 || s.workspaceCount() != 1 {
+			t.Fatal("workspace deadlines were not independent")
+		}
+		s.cleanupIdleWorkspaces()
+		if l.deleteCount() != 2 || s.workspaceCount() != 0 {
+			t.Fatal("shutdown did not clean retained workspace")
+		}
+		time.Sleep(time.Hour)
+		synctest.Wait()
+		if l.deleteCount() != 2 {
+			t.Fatal("timer deleted again after shutdown")
+		}
+	})
+}
+
+func TestIdleExpirySerializesReconnectWithDeletion(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		deleting := make(chan struct{})
+		proceed := make(chan struct{})
+		l := &controlledLifecycle{delete: func(context.Context) error {
+			close(deleting)
+			<-proceed
+			return nil
+		}}
+		s := leaseServer(l)
+		s.idleTimeout = 30 * time.Minute
+		id := workspace.New("alice", "dev")
+		release, err := s.acquireWorkspace(context.Background(), id, workspace.StorageEphemeral)
+		if err != nil {
+			t.Fatal(err)
+		}
+		release()
+		time.Sleep(30 * time.Minute)
+		<-deleting
+		var resumed func()
+		go func() {
+			var err error
+			resumed, err = s.acquireWorkspace(context.Background(), id, workspace.StorageEphemeral)
+			if err != nil {
+				panic(err)
+			}
+		}()
+		synctest.Wait()
+		if l.ensureCount() != 1 {
+			t.Fatal("reprovisioned during deletion")
+		}
+		close(proceed)
+		synctest.Wait()
+		if resumed == nil || l.ensureCount() != 2 {
+			t.Fatal("reconnect did not provision after deletion")
+		}
+		l.delete = nil
+		resumed()
+		s.cleanupIdleWorkspaces()
+	})
+}
+
+func TestIdleShutdownDrainsExpiredTimer(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		l := &controlledLifecycle{}
+		s := leaseServer(l)
+		s.idleTimeout = 30 * time.Minute
+		id := workspace.New("alice", "dev")
+		release, err := s.acquireWorkspace(context.Background(), id, workspace.StorageEphemeral)
+		if err != nil {
+			t.Fatal(err)
+		}
+		release()
+		lease := s.workspaces[id.PodNameFor(workspace.StorageEphemeral)]
+		<-lease.gate
+		time.Sleep(30 * time.Minute)
+		synctest.Wait() // Expiry callback is already waiting for the gate.
+		go s.cleanupIdleWorkspaces()
+		synctest.Wait()
+		lease.gate <- struct{}{}
+		synctest.Wait()
+		if l.deleteCount() != 1 || s.workspaceCount() != 0 {
+			t.Fatal("shutdown/expiry race did not clean exactly once")
+		}
+	})
 }

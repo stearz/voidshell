@@ -17,7 +17,7 @@ The execution and lifecycle contract is recorded in
 | Direct SSH transport | Opt-in per-pod authenticated SSH; shell, transfer, and forwarding bypass the API |
 | SSH signal forwarding | Passed through to OpenSSH in SSH mode; unavailable with Kubernetes exec |
 | Keepalive requests | Replies to `keepalive@openssh.com` |
-| Concurrent sessions | Process-local workspace leases; cleanup after last active channel |
+| Concurrent sessions | Process-local workspace leases; cleanup after configurable idle grace period (default 30m) |
 | Disconnect and setup failure | Cancel API streams and attempt cleanup; retain PVCs |
 
 ## Deliberately deferred
@@ -29,7 +29,7 @@ The execution and lifecycle contract is recorded in
   user's own workspace.
 - Client environment variables beyond PTY `TERM`: requires an explicit allowlist.
 - SSH signals with Kubernetes exec: the API does not expose the remote process ID.
-- Idle TTL, automatic crash recovery, and multi-replica coordination.
+- Persistent idle deadlines, automatic crash recovery, and multi-replica coordination.
 - VS Code Remote SSH compatibility: needs separate end-to-end validation; the
   implemented primitives alone do not establish support.
 

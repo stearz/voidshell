@@ -40,23 +40,29 @@ type PodForwarder interface {
 
 // Server is the voidshell SSH server.
 type Server struct {
-	sshCfg     *ssh.ServerConfig
-	lifecycle  WorkspaceLifecycle
-	attacher   PodAttacher
-	log        *slog.Logger
-	mu         sync.Mutex
-	workspaces map[string]*workspaceLease
+	sshCfg      *ssh.ServerConfig
+	lifecycle   WorkspaceLifecycle
+	attacher    PodAttacher
+	log         *slog.Logger
+	mu          sync.Mutex
+	workspaces  map[string]*workspaceLease
+	idleTimeout time.Duration
+	idleTimers  sync.WaitGroup
 }
 
 // New creates a Server. hostKey is the SSH host key signer. auth authenticates
 // incoming public keys. lifecycle creates and cleans up workspace pods.
 // attacher connects the SSH streams to a running pod.
-func New(hostKey ssh.Signer, auth Authenticator, lifecycle WorkspaceLifecycle, attacher PodAttacher, log *slog.Logger) *Server {
+func New(hostKey ssh.Signer, auth Authenticator, lifecycle WorkspaceLifecycle, attacher PodAttacher, log *slog.Logger, options ...Option) *Server {
 	s := &Server{
-		lifecycle:  lifecycle,
-		attacher:   attacher,
-		log:        log,
-		workspaces: make(map[string]*workspaceLease),
+		lifecycle:   lifecycle,
+		attacher:    attacher,
+		log:         log,
+		workspaces:  make(map[string]*workspaceLease),
+		idleTimeout: 30 * time.Minute,
+	}
+	for _, option := range options {
+		option(s)
 	}
 	s.sshCfg = &ssh.ServerConfig{
 		PublicKeyCallback: func(conn ssh.ConnMetadata, key ssh.PublicKey) (*ssh.Permissions, error) {
@@ -76,6 +82,18 @@ func New(hostKey ssh.Signer, auth Authenticator, lifecycle WorkspaceLifecycle, a
 	return s
 }
 
+// Option configures a server before it starts serving.
+type Option func(*Server)
+
+// WithIdleTimeout retains workspaces after their last active channel closes.
+// Zero selects immediate cleanup. Negative values are invalid.
+func WithIdleTimeout(timeout time.Duration) Option {
+	if timeout < 0 {
+		panic("negative workspace idle timeout")
+	}
+	return func(s *Server) { s.idleTimeout = timeout }
+}
+
 // ListenAndServe starts a TCP listener on addr and calls Serve.
 func (s *Server) ListenAndServe(ctx context.Context, addr string) error {
 	ln, err := net.Listen("tcp", addr)
@@ -88,7 +106,10 @@ func (s *Server) ListenAndServe(ctx context.Context, addr string) error {
 // Serve accepts connections on ln until ctx is cancelled.
 func (s *Server) Serve(ctx context.Context, ln net.Listener) error {
 	var connections sync.WaitGroup
-	defer connections.Wait()
+	defer func() {
+		connections.Wait()
+		s.cleanupIdleWorkspaces()
+	}()
 	go func() {
 		<-ctx.Done()
 		ln.Close()
