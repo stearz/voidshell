@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.9.0](https://github.com/stearz/voidshell/compare/v0.8.0...v0.9.0) (2026-11-26)
+
+
+### Features
+
+* retain idle workspaces for 30 minutes ([b6cf832](https://github.com/stearz/voidshell/commit/b6cf83246316ace20542c64342f643ec72bdf0ad))
+
+
+### Bug Fixes
+
+* keep immediate workspace cleanup as the default ([3ca5b83](https://github.com/stearz/voidshell/commit/3ca5b83a5468a5b0f1bdacaaafbdd0cbf754c160))
+* update x/net to unblock image security scans ([c4c28d0](https://github.com/stearz/voidshell/commit/c4c28d011f5b2a3bce0e0324d819263552381f92))
+
 ## [0.8.0](https://github.com/stearz/voidshell/compare/v0.7.0...v0.8.0) (2026-10-31)
 
 
