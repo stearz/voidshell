@@ -118,6 +118,17 @@ jobs:
           ignore-unfixed: true
           exit-code: '1'
 
+      # Keep blocking findings visible in the job log as well as the SARIF report.
+      - name: Report voidshell scan findings
+        if: steps.scan-voidshell.outcome == 'failure'
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          image-ref: voidshell:scan
+          format: table
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+          exit-code: '0'
+
       - name: Upload voidshell scan results
         if: always() && hashFiles('trivy-voidshell.sarif') != ''
         uses: github/codeql-action/upload-sarif@v4
