@@ -296,3 +296,20 @@ Workspace API token automount is disabled in both modes. API metadata/Secret
 administrators and the single proxy remain trusted. Review the full boundaries,
 rotation procedure, and additive-policy limitations in
 [ADR 005](adr/005-direct-ssh-backend.md).
+
+## SEC-014 — HTML parser dependency fix and proxy scan diagnostics
+
+**Status:** Implemented
+
+The proxy image scan blocked publication for CVE-2026-78661 in
+`golang.org/x/net` v0.60.0. Update the transitive Kubernetes client dependency
+to v0.62.0, the fixed version identified by the Go vulnerability database and
+Trivy. This addresses the scanner finding without making a claim that the
+vulnerable HTML parser is reachable through VoidShell's SSH interface.
+
+Keep the existing blocking image checks. When the proxy scan fails, also emit a
+human-readable table in the job log, matching the existing workspace-image
+reporting. The SARIF report remains uploaded for code-scanning inspection.
+
+Sources: [Go vulnerability report GO-2026-6860](https://pkg.go.dev/vuln/GO-2026-6860),
+[failed proxy image scan](https://github.com/stearz/voidshell/actions/runs/45794323257/job/139824082715).
