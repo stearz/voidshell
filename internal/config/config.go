@@ -102,7 +102,7 @@ func defaults() Config {
 		},
 		Workspace: WorkspaceConfig{
 			Backend:      "kubernetes",
-			IdleTimeout:  "30m",
+			IdleTimeout:  "0s",
 			Image:        "ghcr.io/stearz/voidshell-workspace:main",
 			ShellCommand: []string{"/bin/bash", "-l"},
 		},

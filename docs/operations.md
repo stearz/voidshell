@@ -173,7 +173,7 @@ helm upgrade --install voidshell oci://ghcr.io/stearz/charts/voidshell \
 ```text
 first active channel → CREATE pod → wait for container readiness → exec/forward
 additional channels  → independent processes/streams in the same pod
-last channel closes  → start idle timer (30m by default)
+last channel closes  → start idle timer (0s by default: immediate cleanup)
 new channel arrives  → cancel timer → reuse pod
 idle timer expires   → DELETE pod → wait for deletion
 ```
@@ -186,8 +186,8 @@ home survives deletion. Installed Homebrew packages are outside the home volume.
 An idle SSH transport does not retain a pod. Forward-only connections provision
 on the first incoming forwarding channel and release on its completion. Keep a
 shell session open to keep a development server beyond the idle window.
-`workspace.idleTimeout` defaults to `30m`; set `0s` for immediate cleanup or
-override it with `VOIDSHELL_WORKSPACE_IDLE_TIMEOUT`. New channels cancel cleanup;
+`workspace.idleTimeout` defaults to `0s` for backward-compatible immediate cleanup.
+Set `30m` for T3 Code, or override it with `VOIDSHELL_WORKSPACE_IDLE_TIMEOUT`. New channels cancel cleanup;
 active channels never expire merely because of their age. Reconnection followed
 by disconnect starts a fresh idle window. PVCs are never removed by this timer.
 

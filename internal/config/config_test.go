@@ -11,7 +11,7 @@ func TestLoadDefaults(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load(\"\") error: %v", err)
 	}
-	if cfg.Workspace.IdleTimeout != "30m" {
+	if cfg.Workspace.IdleTimeout != "0s" {
 		t.Fatalf("default idle timeout = %q", cfg.Workspace.IdleTimeout)
 	}
 	if cfg.SSH.Port != 2222 {

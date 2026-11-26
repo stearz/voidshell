@@ -17,7 +17,7 @@ The execution and lifecycle contract is recorded in
 | Direct SSH transport | Opt-in per-pod authenticated SSH; shell, transfer, and forwarding bypass the API |
 | SSH signal forwarding | Passed through to OpenSSH in SSH mode; unavailable with Kubernetes exec |
 | Keepalive requests | Replies to `keepalive@openssh.com` |
-| Concurrent sessions | Process-local workspace leases; cleanup after configurable idle grace period (default 30m) |
+| Concurrent sessions | Process-local workspace leases; cleanup after configurable idle grace period (default 0s: immediate cleanup) |
 | Disconnect and setup failure | Cancel API streams and attempt cleanup; retain PVCs |
 
 ## Deliberately deferred

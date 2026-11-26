@@ -59,7 +59,7 @@ func New(hostKey ssh.Signer, auth Authenticator, lifecycle WorkspaceLifecycle, a
 		attacher:    attacher,
 		log:         log,
 		workspaces:  make(map[string]*workspaceLease),
-		idleTimeout: 30 * time.Minute,
+		idleTimeout: 0,
 	}
 	for _, option := range options {
 		option(s)

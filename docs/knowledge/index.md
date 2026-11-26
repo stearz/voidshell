@@ -11,7 +11,7 @@ homelabs, with disposable storage by default and opt-in persistent home volumes.
 - [Identity and naming](../adr/001-identity-and-naming.md)
 - [Workspace image and Linux identity](../adr/002-workspace-image-and-user-identity.md)
 - [Storage selection](../adr/003-workspace-storage-selection.md)
-- [Independent sessions, 30-minute idle grace period, and forwarding boundary](../adr/004-independent-sessions-and-workspace-lifecycle.md)
+- [Independent sessions, optional idle grace period, and forwarding boundary](../adr/004-independent-sessions-and-workspace-lifecycle.md)
 - [Optional direct SSH backend and internal trust](../adr/005-direct-ssh-backend.md)
 - [Operations and cluster smoke checks](../operations.md)
 - [Security decisions](../security-decisions.md)

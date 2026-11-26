@@ -145,7 +145,7 @@ func TestDirectSSHOpenSSH(t *testing.T) {
 	if err := os.WriteFile(clientKnownHosts, []byte(fmt.Sprintf("[127.0.0.1]:%d %s", ln.Addr().(*net.TCPAddr).Port, ssh.MarshalAuthorizedKey(signer.PublicKey()))), 0600); err != nil {
 		t.Fatal(err)
 	}
-	srv := server.New(signer, integrationAuth{}, m, m, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	srv := server.New(signer, integrationAuth{}, m, m, slog.New(slog.NewTextHandler(io.Discard, nil)), server.WithIdleTimeout(30*time.Minute))
 	serverCtx, stopServer := context.WithCancel(ctx)
 	done := make(chan error, 1)
 	go func() { done <- srv.Serve(serverCtx, ln) }()

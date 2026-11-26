@@ -19,8 +19,9 @@ serialized per workspace, including across separate SSH connections. Unrelated
 workspaces provision independently.
 
 The last lease release starts a process-local idle timer. `workspace.idleTimeout`
-defaults to `30m`, accepts non-negative Go durations, and can be overridden with
-`VOIDSHELL_WORKSPACE_IDLE_TIMEOUT`. `0s` retains immediate cleanup. A new active
+defaults to `0s` (immediate cleanup for backward compatibility), accepts
+non-negative Go durations, and can be overridden with
+`VOIDSHELL_WORKSPACE_IDLE_TIMEOUT`. Set `30m` for T3 Code. A new active
 channel cancels the timer; the next last release starts a full new idle window.
 The pod and background processes survive gaps between commands and forwarded
 requests, including T3 Code's separate backend launch and tunnel connections.
