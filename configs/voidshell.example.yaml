@@ -30,8 +30,8 @@ kubernetes:
   storageSize: 5Gi
 
 workspace:
-  # Retain the pod after its last active channel; 0s restores immediate cleanup.
-  idleTimeout: 30m
+  # Grace period after the last active channel. Set 30m for T3 Code.
+  idleTimeout: 0s
   # kubernetes keeps data on the Exec API; ssh uses direct pod networking.
   backend: kubernetes
   # OCI image used for the workspace Pod. The default workspace image has

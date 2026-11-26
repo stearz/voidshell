@@ -79,7 +79,7 @@ for per-pod authentication and host keys.
 | `kubernetes.guestNamespace` | `voidshell-guest` | Namespace for workspace pods and persistent-mode PVCs |
 | `kubernetes.storageClass` | `""` | Optional class for `persist.<workspace>` PVCs; empty uses the cluster default |
 | `kubernetes.storageSize` | `5Gi` | PVC size for `persist.<workspace>` workspaces |
-| `workspace.idleTimeout` | `30m` | Idle grace period after the last active channel; `0s` cleans up immediately |
+| `workspace.idleTimeout` | `0s` | Idle grace period after the last active channel; `0s` cleans up immediately |
 | `workspace.backend` | `kubernetes` | `kubernetes` Exec API or `ssh` direct pod transport |
 | `workspace.image` | `ghcr.io/stearz/voidshell-workspace:main` | Image used for workspace pods |
 | `workspace.shellCommand` | `[/bin/bash, -l]` | Shell process started for each session |
@@ -107,10 +107,11 @@ workspace pods before reconnecting. PVCs remain intact. Build the updated
 workspace image for SFTP, legacy SCP, and rsync binaries. Custom image entrypoints
 are bypassed; images need `/bin/sh`, `sleep`, `env`, and the configured shell.
 
-The pod is deleted after `workspace.idleTimeout` (default `30m`) without active
+The pod is deleted after `workspace.idleTimeout` (default `0s`, immediate cleanup) without active
 shell, command, SFTP, or forwarding channels. A new channel cancels cleanup and
 its completion starts a fresh idle window. Active channels have no maximum
-lifetime. Graceful shutdown bypasses the idle window. `HOME` and the working directory are `/home/workspace`, writable
+lifetime. Set `workspace.idleTimeout: 30m` for T3 Code. Graceful shutdown bypasses
+the idle window. `HOME` and the working directory are `/home/workspace`, writable
 via pod `fsGroup: 1000`. Only `persist.<workspace>` home volumes survive deletion.
 See [ADR 004](../../docs/adr/004-independent-sessions-and-workspace-lifecycle.md).
 

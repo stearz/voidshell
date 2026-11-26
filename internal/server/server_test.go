@@ -90,7 +90,7 @@ func startTestServer(t *testing.T, auth server.Authenticator, lifecycle server.W
 	}
 
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
-	srv := server.New(hostSigner, auth, lifecycle, attacher, log, server.WithIdleTimeout(0))
+	srv := server.New(hostSigner, auth, lifecycle, attacher, log)
 
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {

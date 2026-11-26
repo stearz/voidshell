@@ -66,7 +66,7 @@ select the right key automatically.
 | Home storage | Temporary `emptyDir` | PersistentVolumeClaim |
 | Home and working directory | `/home/workspace` | `/home/workspace` |
 | While sessions overlap | Files shared within this workspace | Files shared within this workspace |
-| After 30 minutes without active channels (default) | Pod and files are removed | Pod is removed; home volume remains |
+| After the last active channel closes (default) | Pod and files are removed | Pod is removed; home volume remains |
 | Container changes outside the home volume | Discarded | Discarded |
 
 These selectors use different pods. Switching to `persist.project` does **not**
@@ -110,18 +110,19 @@ listen on the pod IP. Accepted destinations are `localhost`, `127.0.0.1`, and
 `::1`. Kubernetes mode uses the kubelet's loopback family; SSH mode connects to
 `127.0.0.1` inside the workspace.
 
-After the last active shell, command, SFTP session, or forwarding channel closes,
-the pod stays available for **30 minutes** by default. A new channel cancels the
-pending cleanup; its completion starts a fresh idle window. Active channels have
-no maximum lifetime. Configure `workspace.idleTimeout` (for example `30m`, `24h`,
-or `0s` for immediate cleanup).
+By default, the pod is deleted immediately after the last active shell, command,
+SFTP session, or forwarding channel closes (`workspace.idleTimeout: 0s`). This
+preserves the existing lifecycle behavior.
 
-This grace period keeps background servers alive between separate SSH commands
-and tunnel requests, including T3 Code's backend startup. An idle SSH transport or
-`ssh -N -L ...` does not itself reset the deadline. Forward-only connections
-provision lazily when traffic opens a forwarding channel. Use `persist.<workspace>`
-to preserve home files after the grace period expires. Graceful proxy shutdown
-bypasses the grace period and cleans up pods.
+For T3 Code, set `workspace.idleTimeout: 30m` to keep background servers alive
+between separate SSH launch commands and tunnel requests. A new channel cancels
+pending cleanup; its completion starts a fresh idle window. Active channels have
+no maximum lifetime. Other non-negative durations, such as `24h`, are also valid.
+
+An idle SSH transport or `ssh -N -L ...` does not itself reset the deadline.
+Forward-only connections provision lazily when traffic opens a forwarding
+channel. Use `persist.<workspace>` to preserve home files after cleanup.
+Graceful proxy shutdown bypasses the grace period and cleans up pods.
 
 ## Deploy on your cluster
 
@@ -300,7 +301,7 @@ environment variables then override individual fields.
 | `VOIDSHELL_K8S_GUEST_NAMESPACE` | `kubernetes.guestNamespace` | `voidshell-workspaces` (chart: `voidshell-guest`) |
 | `VOIDSHELL_K8S_STORAGE_CLASS` | `kubernetes.storageClass` | Empty, uses cluster default |
 | `VOIDSHELL_K8S_STORAGE_SIZE` | `kubernetes.storageSize` | `5Gi` |
-| `VOIDSHELL_WORKSPACE_IDLE_TIMEOUT` | `workspace.idleTimeout` | `30m`; non-negative duration, `0s` for immediate cleanup |
+| `VOIDSHELL_WORKSPACE_IDLE_TIMEOUT` | `workspace.idleTimeout` | `0s`; non-negative duration, `0s` for immediate cleanup |
 | `VOIDSHELL_WORKSPACE_BACKEND` | `workspace.backend` | `kubernetes`; optionally `ssh` |
 | `VOIDSHELL_WORKSPACE_IMAGE` | `workspace.image` | `ghcr.io/stearz/voidshell-workspace:main` |
 | `VOIDSHELL_WORKSPACE_SHELL_COMMAND` | `workspace.shellCommand` | `/bin/bash,-l`; comma-separated override |
